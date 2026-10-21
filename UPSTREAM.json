@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/andriidrok1/autobroll",
+  "source_tree": "4aef3afb099c866bd2977c184f9912ba57318f77",
+  "license": "MIT",
+  "local_version": "0.1.0",
+  "notes": "口播工坊是基于 AutoBroll 的本地中文定制版本，保留 LICENSE。"
+}

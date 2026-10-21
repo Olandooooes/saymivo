@@ -1,0 +1,4 @@
+import {test}from'node:test';import assert from'node:assert/strict';import {pauseSegments}from'../scripts/pause-plan.mjs';
+test('quiet first syllable is protected by cached source word timings',()=>{const c={inSec:0,outSec:19.379},w=[{startMs:2000,endMs:2720},{startMs:17600,endMs:18260}];const segs=pauseSegments(c,[[0,1.461],[1.467,2.351],[18.585,19.379]],w);assert.equal(segs.length,1);assert(segs[0].inSec<=1.82);assert(segs[0].outSec>=18.26);assert(!segs.some(s=>s.inSec>2&&s.inSec<2.72));});
+test('acoustic-only cutting keeps breath margins around real pauses',()=>{const segs=pauseSegments({inSec:0,outSec:5.5},[[2,3.5]]);assert.deepEqual(segs,[{inSec:0,outSec:2.12},{inSec:3.38,outSec:5.5}]);});
+test('a short spoken word is retained even when shorter than noise threshold',()=>{const segs=pauseSegments({inSec:0,outSec:2},[[0,.9],[1.1,2]],[{startMs:900,endMs:1100}]);assert(segs.some(s=>s.inSec<=.9&&s.outSec>=1.1));});

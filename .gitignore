@@ -1,0 +1,54 @@
+# secrets — never commit
+.env
+
+# deps / build
+node_modules/
+out/
+build/
+.venv/
+whisper.cpp/
+
+# ALL user media + generated data live in public/ (clips, projects with speech
+# transcripts, music, waveforms, exports) — personal, never committed
+public/*
+!public/.gitkeep
+
+# pipeline temp files
+.captions-tmp/
+.props-*.json
+.clips-*.json
+.broll-*.json
+.arrange-*.json
+.trim-*.json
+.upload-*
+
+# IDE
+.idea/
+
+# editor build output (vite root = editor/)
+editor/dist/
+
+.tools/
+__pycache__/
+
+!public/fonts/
+!public/fonts/*
+
+.studio.log
+
+.models/
+test-output/
+inspection/
+
+.auto-jobs/
+
+.proofread.json
+
+# Local reference material and private validation notes
+screenshots/
+VALIDATION.md
+.mcp.json
+release/
+.DS_Store
+.env.*
+!.env.example
