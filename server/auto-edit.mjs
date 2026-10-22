@@ -1,8 +1,17 @@
+import {visualLayoutSamples,applyVisualProfileLayout} from './auto-visual-layout.mjs';
+import {validEmphasisTheme} from '../src/emphasis-theme.mjs';
+import {displayFontConfig} from '../src/display-fonts.mjs';
+import {withLecturePageTransitions} from '../src/lecture-transition.mjs';
+import {storyboardReviewMarkdown} from '../src/storyboard-review.mjs';
+import {applySourceVisualReviews} from './source-visual-reviews.mjs';
+import {loadAutoMediaLibrary} from './auto-media-library.mjs';
+import {bindAutomaticSceneMedia} from '../src/auto-scene-media.mjs';
+import {applySourceEditDecisions,applySourceCaptionTimings} from './source-edit-decisions.mjs';
 import {knowledgePlan,presentationSize} from '../src/presentation.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {applyTrimPlan,automaticMotionPlan,styleCaptions} from './auto-plan.mjs';
 import {proofreadCaptions,readProofreadSettings,parseGlossary} from './proofread.mjs';
 import {gemini} from '../scripts/gemini.mjs';
@@ -26,7 +35,8 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
  const stage=(id,n,label,progress)=>update(id,{stage:n,label,progress});
  async function execute(id,input){
   const jobDir=path.join(jobsRoot,id),projectId=`auto-${id}`,output=path.join(PUBLIC,'exports',`${projectId}.mp4`);
-  const env={KOUBO_OUTPUT_DIR:jobDir,KOUBO_LOCAL_ONLY:'1',AUTOBROLL_FACE_AWARE:'0'};
+  const accurateModel=path.join(ROOT,'.models','whisper-medium');
+  const env={KOUBO_OUTPUT_DIR:jobDir,KOUBO_LOCAL_ONLY:'1',AUTOBROLL_FACE_AWARE:'0',...(fs.existsSync(path.join(accurateModel,'model.bin'))?{AUTOBROLL_MODEL:accurateModel}:{})};
   if(input.glossary)env.AUTOBROLL_PROMPT='普通话口播，保留原话，注意这些专有名词：'+parseGlossary(input.glossary).map(t=>t.term).join('、').slice(0,500);
   let p={presentation:{theme:'classic',format:input.format,chapters:[]},name:input.name||'一键口播',clips:input.clips,captions:[],brolls:[],brollAssets:[],music:null,accentColor:'#d8f99a'};
   try{
@@ -55,6 +65,10 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
    await command(id,process.execPath,['scripts/trim-silence.mjs',inputFile],{env});
    const {plan}=JSON.parse(fs.readFileSync(path.join(jobDir,'trim-silence.json'),'utf8'));
    p={...p,...applyTrimPlan(p.clips,p.captions,plan)};
+   const editorial=input.reuseReviewedEdits===false?{clips:p.clips,captions:p.captions,report:[]}:applySourceEditDecisions(p.clips,p.captions,{PUBLIC});
+   p={...p,clips:editorial.clips,captions:editorial.captions};
+   fs.writeFileSync(path.join(jobDir,'editorial-reuse.json'),JSON.stringify({method:'source-bound prior project decisions',decisions:editorial.report,captionAdjustments:editorial.captionAdjustments??[]},null,2));
+   update(id,{reviewedCutCount:new Set(editorial.report.map(r=>r.src+':'+r.id)).size});
    stage(id,3,input.mode==='gemini'?'AI 理解内容并设计动效':'按内容编排动效与字幕',48);
    let kinds;
    if(input.mode==='gemini'){
@@ -65,12 +79,79 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
     }catch{update(id,{warnings:[...(read(id).warnings??[]),'AI 服务暂不可用，已自动改用本地内容编排。']});}
    }
    p={...p,...automaticMotionPlan(p.captions,p.clips,kinds)};
-   if(input.template==='knowledge'||input.template==='reference'){p={...p,...knowledgePlan(p.captions,p.clips,{format:input.format,title:input.name,style:input.template==='reference'?'reference':'clean',motionPace:input.motionPace}),accentColor:'#f1ff27'};}
+   if(input.reuseReviewedEdits!==false){
+    const timing=applySourceCaptionTimings(p.clips,p.captions,{PUBLIC});p.captions=timing.captions;
+    fs.writeFileSync(path.join(jobDir,'caption-timing-reuse.json'),JSON.stringify(timing.report,null,2));
+   }
+   if(input.template==='knowledge'||input.template==='reference'){p={...p,...knowledgePlan(p.captions,p.clips,{format:input.format,title:input.name,style:input.template==='reference'?'reference':'clean',independentScenes:input.template==='reference',motionPace:input.motionPace,displayFont:input.displayFont,emphasisTheme:input.emphasisTheme}),accentColor:'#f1ff27'};}
+   if(input.template==='reference'&&input.format==='landscape'){
+    const assets=loadAutoMediaLibrary(ROOT,PUBLIC),bound=bindAutomaticSceneMedia(p.presentation.scenes??[],assets,p.captions);
+    p.presentation={...p.presentation,scenes:bound.scenes};
+    p.brollAssets=assets.filter(a=>bound.report.some(r=>r.assetId===a.id&&r.status==='bound'));
+    fs.writeFileSync(path.join(jobDir,'scene-media-bindings.json'),JSON.stringify(bound.report,null,2));
+    update(id,{automaticMediaCount:bound.report.filter(r=>r.status==='bound').length});
+   }
+   const layoutReport=[],profileTagSnapshots=new Map();
+   if(input.adaptTextLayout!==false&&input.template==='reference'&&input.format==='landscape'){
+    if(process.platform==='darwin'){
+     stage(id,3,'分析人物位置，安排重点字',53);
+     let profileIndex=0;
+     for(const src of new Set(p.clips.map(c=>c.src))){
+      const times=visualLayoutSamples(p,src);if(!times.length)continue;
+      const profileDir=path.join(jobDir,'visual-profile-'+profileIndex++);
+      try{
+       const python=fs.existsSync(path.join(ROOT,'.venv/bin/python'))?path.join(ROOT,'.venv/bin/python'):'python3';
+       await command(id,python,['scripts/build-visual-profile.py',path.join(PUBLIC,src),profileDir,'--times',times.join(',')]);
+       const profile=JSON.parse(fs.readFileSync(path.join(profileDir,'profile.json'),'utf8'));
+       const sourceSha256=createHash('sha256').update(fs.readFileSync(path.join(PUBLIC,src))).digest('hex');
+       const adapted=applyVisualProfileLayout(p,profile,{src,sourceSha256});p=adapted.project;layoutReport.push(...adapted.report);
+      }catch(e){
+       if(read(id)?.status==='cancelled')throw e;
+       layoutReport.push({src,status:'skipped',reason:'local-profile-unavailable'});
+       update(id,{warnings:[...(read(id).warnings??[]),'本机人物位置分析未完成，已保留原布局，请预览检查。']});
+      }
+     }
+    }else layoutReport.push({status:'skipped',reason:'local-profile-platform-unavailable'});
+    for(const row of layoutReport)if(row.status==='applied')profileTagSnapshots.set(row.sceneId,JSON.stringify(p.presentation.scenes.find(s=>s.id===row.sceneId)?.tags));
+   }
+   if(input.reuseReviewedEdits!==false){
+    const visual=applySourceVisualReviews(p,{PUBLIC});p=visual.project;
+    fs.writeFileSync(path.join(jobDir,'visual-review-reuse.json'),JSON.stringify(visual.report,null,2));
+    update(id,{reviewedVisualCount:visual.report.filter(r=>r.status==='applied').length});
+   }
+   for(const row of layoutReport)if(row.status==='applied')row.finalStatus=profileTagSnapshots.get(row.sceneId)===JSON.stringify(p.presentation.scenes.find(s=>s.id===row.sceneId)?.tags)?'applied':'replaced-by-reviewed-design';
+   if(layoutReport.length){
+    fs.writeFileSync(path.join(jobDir,'visual-layout-profile.json'),JSON.stringify(layoutReport,null,2));
+    update(id,{analysedVisualLayoutCount:layoutReport.filter(r=>r.status==='applied').length,adaptedVisualLayoutCount:layoutReport.filter(r=>r.finalStatus==='applied').length});
+   }
+   if(input.template==='reference'){
+    p.presentation={...p.presentation,scenes:withLecturePageTransitions(p.presentation.scenes??[])};
+    fs.writeFileSync(path.join(jobDir,'lecture-page-transitions.json'),JSON.stringify((p.presentation.scenes??[]).filter(s=>s.transitionMs!==undefined).map(s=>({id:s.id,layout:s.layout,transitionMs:s.transitionMs})),null,2));
+   }
    stage(id,3,'调整人声音量与镜头布局',57);
+   const sourceGains=new Map();
    for(const c of p.clips){
-    const log=await command(id,'ffmpeg',['-hide_banner','-i',path.join(PUBLIC,c.src),'-vn','-af','volumedetect','-f','null','-']);const peak=log.match(/max_volume:\s*(-?[\d.]+) dB/);if(peak)c.volume=Math.max(.5,Math.min(2,10**((-3-Number(peak[1]))/20)));
+    if(!sourceGains.has(c.src)){
+     const log=await command(id,'ffmpeg',['-hide_banner','-i',path.join(PUBLIC,c.src),'-vn','-af','volumedetect','-f','null','-']);
+     const peak=log.match(/max_volume:\s*(-?[\d.]+) dB/);
+     sourceGains.set(c.src,peak?Math.max(.5,Math.min(2,10**((-3-Number(peak[1]))/20))):null);
+    }
+    if(sourceGains.get(c.src)!==null)c.volume=sourceGains.get(c.src);
    }
    projectSave(projectId,p);fs.writeFileSync(path.join(jobDir,'edited.json'),JSON.stringify(p));
+   if(input.delivery==='storyboard'){
+    const storyboardFile=`/exports/${projectId}-storyboard.md`;
+    fs.mkdirSync(path.join(PUBLIC,'exports'),{recursive:true});
+    fs.writeFileSync(path.join(PUBLIC,storyboardFile.slice(1)),storyboardReviewMarkdown(p,30));
+    const size=presentationSize(p.presentation);
+    update(id,{status:'done',result:'storyboard',progress:100,label:'分镜已生成，可预览修改',stage:3,
+     template:input.template,format:input.format,width:size.width,height:size.height,projectId,sourceProjectId:projectId+'-source',storyboardFile,
+     durationSec:p.clips.reduce((n,c)=>n+Math.max(1,Math.round((c.outSec-c.inSec)/(c.speed??1)*30))/30,0),
+     originalDurationSec:input.clips.reduce((n,c)=>n+(c.outSec-c.inSec)/(c.speed??1),0),captionCount:p.captions.length,
+     sceneCount:p.presentation?.scenes?.length??0,motionCount:p.captions.filter(c=>c.motion).length,
+     missingMaterials:(p.presentation?.scenes??[]).filter(s=>s.missing).map(s=>({sceneId:s.id,message:s.missing}))});
+    return;
+   }
    stage(id,4,input.format==='landscape'?'导出横屏 1080p MP4':'导出竖屏 1080p MP4',63);
    await command(id,process.execPath,[path.join(ROOT,'node_modules/@remotion/cli/remotion-cli.js'),'render','MultiClip',output,`--props=${path.join(jobDir,'edited.json')}`,'--concurrency=2','--x264-preset=veryfast'],{onText:t=>{for(const m of t.matchAll(/Rendered\s+(\d+)\/(\d+)/g))update(id,{progress:63+Math.floor(+m[1]/+m[2]*28)});for(const m of t.matchAll(/Encoded\s+(\d+)\/(\d+)/g))update(id,{label:'合成画面与原声',progress:91+Math.floor(+m[1]/+m[2]*6)});}});
    stage(id,5,'检查成片文件',98);
@@ -79,7 +160,7 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
    const duration=p.clips.reduce((n,c)=>n+(c.outSec-c.inSec)/(c.speed??1),0);
    const size=presentationSize(p.presentation);
    if(video?.width!==size.width||video?.height!==size.height||!audio||Math.abs(Number(info.format?.duration)-duration)>.25)throw Error('成片校验未通过。工程已保存，可打开检查并重新导出。');
-   update(id,{status:'done',progress:100,label:'成片已完成',stage:5,file:`/exports/${projectId}.mp4`,template:input.template,format:input.format,width:size.width,height:size.height,projectId,sourceProjectId:projectId+'-source',durationSec:Number(info.format.duration),originalDurationSec:input.clips.reduce((n,c)=>n+(c.outSec-c.inSec)/(c.speed??1),0),captionCount:p.captions.length,motionCount:p.captions.filter(c=>c.motion).length});
+   update(id,{status:'done',progress:100,label:'成片已完成',stage:5,file:`/exports/${projectId}.mp4`,template:input.template,format:input.format,width:size.width,height:size.height,projectId,sourceProjectId:projectId+'-source',durationSec:Number(info.format.duration),originalDurationSec:input.clips.reduce((n,c)=>n+(c.outSec-c.inSec)/(c.speed??1),0),captionCount:p.captions.length,sceneCount:p.presentation?.scenes?.length??0,motionCount:p.captions.filter(c=>c.motion).length});
   }catch(e){if(read(id)?.status!=='cancelled')update(id,{status:'error',label:'处理未完成，可重试',error:String(e.message||e).slice(0,400),projectId});}
   finally{running.delete(id);if(active===id)active=null;}
  }
@@ -90,9 +171,13 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
   if(input.mode==='gemini'&&!readEnvFile().GEMINI_API_KEY&&!process.env.GEMINI_API_KEY)return {code:400,data:{error:'尚未配置 Gemini 密钥，可以选择本地编排直接剪辑。'}};
   const proofreadMode=['off','local','gemini'].includes(input.proofreadMode)?input.proofreadMode:'local';
   if(proofreadMode==='gemini'&&!readEnvFile().GEMINI_API_KEY&&!process.env.GEMINI_API_KEY)return {code:400,data:{error:'Gemini 上下文校对需要密钥。请先在服务配置填写，或选择本地术语纠错。'}};
+  if(input.adaptTextLayout!=null&&typeof input.adaptTextLayout!=='boolean')return {code:400,data:{error:'人物布局选项无效，请重新选择。'}};
+  if(input.emphasisTheme!=null&&!validEmphasisTheme(input.emphasisTheme))return {code:400,data:{error:'重点字配色无效，请重新选择。'}};
+  if(input.displayFont!=null&&input.displayFont!==''&&!displayFontConfig(input.displayFont))return {code:400,data:{error:'醒目字体无效，请从字体列表重新选择。'}};
+  if(input.delivery!=null&&!['video','storyboard'].includes(input.delivery))return {code:400,data:{error:'生成方式无效，请选择直接成片或先看分镜。'}};
   const glossary=readProofreadSettings(ROOT).glossary??'';parseGlossary(glossary);
-  const id=randomUUID(),dir=path.join(jobsRoot,id);fs.mkdirSync(dir,{recursive:true});const clean={template:['knowledge','reference'].includes(input.template)?input.template:'classic',motionPace:['calm','brisk'].includes(input.motionPace)?input.motionPace:'balanced',format:input.format==='landscape'?'landscape':'portrait',proofreadMode,glossary,name:String(input.name||'一键口播').slice(0,100),clips:input.clips.map(c=>({...c})),mode:input.mode==='gemini'?'gemini':'local'};
-  fs.writeFileSync(path.join(dir,'request.json'),JSON.stringify(clean));save({id,status:'running',stage:0,progress:0,label:'准备自动剪辑',mode:clean.mode,proofreadMode:clean.proofreadMode,createdAt:new Date().toISOString(),warnings:['自动字幕和动效可在工程中继续调整。']});active=id;running.set(id,{children:new Set(),controller:new AbortController()});void execute(id,clean);return {code:202,data:{jobId:id}};
+  const id=randomUUID(),dir=path.join(jobsRoot,id);fs.mkdirSync(dir,{recursive:true});const clean={delivery:input.delivery==='storyboard'?'storyboard':'video',adaptTextLayout:input.adaptTextLayout!==false,emphasisTheme:validEmphasisTheme(input.emphasisTheme)?input.emphasisTheme:undefined,displayFont:displayFontConfig(input.displayFont)?.id,reuseReviewedEdits:input.reuseReviewedEdits!==false,template:['knowledge','reference'].includes(input.template)?input.template:'classic',motionPace:['calm','brisk'].includes(input.motionPace)?input.motionPace:'balanced',format:input.format==='landscape'?'landscape':'portrait',proofreadMode,glossary,name:String(input.name||'一键口播').slice(0,100),clips:input.clips.map(c=>({...c})),mode:input.mode==='gemini'?'gemini':'local'};
+  fs.writeFileSync(path.join(dir,'request.json'),JSON.stringify(clean));save({id,status:'running',stage:0,progress:0,label:'准备自动剪辑',delivery:clean.delivery,mode:clean.mode,proofreadMode:clean.proofreadMode,createdAt:new Date().toISOString(),warnings:['自动字幕和动效可在工程中继续调整。']});active=id;running.set(id,{children:new Set(),controller:new AbortController()});void execute(id,clean);return {code:202,data:{jobId:id}};
  }
  return {
   busy:()=>!!active,
@@ -100,8 +185,8 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
    if(req.method==='POST'&&url.pathname==='/api/auto-edit'){try{const r=start(JSON.parse(await body(req)));json(res,r.code,r.data);}catch{json(res,400,{error:'任务参数格式错误'});}return true;}
    const match=url.pathname.match(/^\/api\/auto-edit\/([\w-]+)(?:\/(retry|cancel))?$/);if(!match)return false;
    const [,id,action]=match,s=read(id);if(!s){json(res,404,{error:'没有找到这项任务'});return true;}
-   if(req.method==='GET'&&!action){json(res,200,s);return true;}
-   if(req.method==='POST'&&action==='retry'){if(!terminal.has(s.status)){json(res,409,{error:'任务仍在处理中'});return true;}const input=JSON.parse(fs.readFileSync(path.join(jobsRoot,id,'request.json'),'utf8'));let override={};try{override=JSON.parse((await body(req))||'{}');}catch{json(res,400,{error:'重试参数格式错误'});return true;}const r=start({...input,...(override.proofreadMode?{proofreadMode:override.proofreadMode}:{}),...(override.template?{template:override.template}:{}),...(override.format?{format:override.format}:{}),...(override.motionPace?{motionPace:override.motionPace}:{})});json(res,r.code,r.data);return true;}
+   if(req.method==='GET'&&!action){try{const report=JSON.parse(fs.readFileSync(path.join(jobsRoot,id,'editorial-reuse.json'),'utf8'));s.editorialDecisions=report.decisions;}catch{}json(res,200,s);return true;}
+   if(req.method==='POST'&&action==='retry'){if(!terminal.has(s.status)){json(res,409,{error:'任务仍在处理中'});return true;}const input=JSON.parse(fs.readFileSync(path.join(jobsRoot,id,'request.json'),'utf8'));let override={};try{override=JSON.parse((await body(req))||'{}');}catch{json(res,400,{error:'重试参数格式错误'});return true;}const r=start({...input,...(override.proofreadMode?{proofreadMode:override.proofreadMode}:{}),...(override.template?{template:override.template}:{}),...(override.format?{format:override.format}:{}),...(override.motionPace?{motionPace:override.motionPace}:{}),...('displayFont' in override?{displayFont:override.displayFont}:{}),...('emphasisTheme' in override?{emphasisTheme:override.emphasisTheme}:{}),...(typeof override.adaptTextLayout==='boolean'?{adaptTextLayout:override.adaptTextLayout}:{}),...(typeof override.reuseReviewedEdits==='boolean'?{reuseReviewedEdits:override.reuseReviewedEdits}:{}),...('delivery' in override?{delivery:override.delivery}:{})});json(res,r.code,r.data);return true;}
    if(req.method==='POST'&&action==='cancel'){if(!terminal.has(s.status)){update(id,{status:'cancelled',label:'已取消，原片和工程已保留'});running.get(id)?.controller.abort();for(const child of running.get(id)?.children??[])child.kill('SIGTERM');}json(res,200,read(id));return true;}
    json(res,405,{error:'不支持此操作'});return true;
   }

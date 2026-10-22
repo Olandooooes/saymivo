@@ -100,5 +100,16 @@ export async function proofreadCaptions(captions,{glossary='',mode='local',model
   }catch(e){if(signal?.aborted)throw e;warnings.push('Gemini 校对未完成，已保留本地纠错结果。请检查服务配置或网络。');}
  }
  const result=applyCorrections(captions,proposals);
+ // Unknown foreign terms are review hints, never automatic spelling repairs.
+ const known=new Set([...defaults,...parseGlossary(glossary)].flatMap(t=>[t.term,...t.aliases]).concat(['AI','Agent','skill','skills']).map(t=>t.replace(/\s/g,'').toLowerCase()));
+ const flagged=new Set();
+ for(const g of flatten(result.captions).values())for(const m of g.text.matchAll(/[A-Za-z][A-Za-z0-9]{3,23}/g)){
+  const term=m[0],key=g.id+':'+term.toLowerCase();
+  if(known.has(term.toLowerCase())||flagged.has(key)||!/[\u4e00-\u9fff]/.test(g.text.slice(Math.max(0,m.index-20),m.index+term.length+20)))continue;
+  if(!/^[A-Z][a-z0-9]+$/.test(term))continue;
+  const at=chars(g.text.slice(0,m.index)).length,range=g.units.slice(at,at+term.length);
+  if(!range.length||result.review.length>=100)continue;
+  flagged.add(key);result.review.push({kind:'unverified-term',clipId:g.id,at,before:term,startMs:range[0].startMs,endMs:range.at(-1).endMs,method:'local',reason:'外文词尚未在术语表中核验，已保留原文；这不表示识别一定有误'});
+ }
  return {...result,mode,warnings};
 }

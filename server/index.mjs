@@ -1,3 +1,9 @@
+import {visualReviewRoute} from './visual-review-routes.mjs';
+import {autoMediaLibraryRoute} from './auto-media-library.mjs';
+import {captionReviewRoute} from './caption-review-routes.mjs';
+import {captionTimingReviewRoute} from './caption-timing-review-routes.mjs';
+import {validateStoryboard} from '../src/storyboard.mjs';
+import {missingSceneAssets} from './scene-assets.mjs';
 import {createAutoEditor} from './auto-edit.mjs';
 // Editor backend (port 3333):
 //   projects   — multi-project library (list/get/save/delete)
@@ -147,6 +153,10 @@ const autoEditor = createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvF
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (await autoEditor.route(req,res,url)) return;
+  if (await captionReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
+  if (await captionTimingReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
+  if (await visualReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
+  if (await autoMediaLibraryRoute({req,res,url,ROOT,PUBLIC,json,body,run})) return;
   if (req.method==='POST' && (JOBS[url.pathname] || url.pathname==='/api/render') && autoEditor.busy()) return json(res,409,{error:'一键剪辑正在进行，请完成后再操作。'});
   if (await studioRoute({req,res,url,ROOT,PUBLIC,PROJECTS_DIR,json,body,run,readEnvFile})) return;
 
@@ -298,7 +308,9 @@ const server = createServer(async (req, res) => {
           await run('ffmpeg', ['-y', '-ss', '0.3', '-i', out, '-frames:v', '1', '-vf', 'scale=160:-1', thumb]);
         }
         fs.rmSync(tmp, {force: true});
-        return json(res, 200, {id, src: `broll-assets/${id}.${ext}`, kind, label: rawName.replace(/\.[^.]+$/, ''), thumb: `/broll-assets/thumbs/${id}.jpg`});
+        const metadata=await run('ffprobe',['-v','error','-select_streams','v:0','-show_entries','stream=width,height:format=duration','-of','json',out]);
+        let dimensions={};try{const data=JSON.parse(metadata.stdout);dimensions={width:data.streams?.[0]?.width,height:data.streams?.[0]?.height,durationSec:Number(data.format?.duration)||undefined};}catch{}
+        return json(res, 200, {id, src: `broll-assets/${id}.${ext}`, kind, label: rawName.replace(/\.[^.]+$/, ''), thumb: `/broll-assets/thumbs/${id}.jpg`,...dimensions});
       } catch (e) {
         try { fs.rmSync(tmp, {force: true}); } catch {}
         return json(res, 500, {error: String(e).slice(0, 200)});
@@ -416,6 +428,10 @@ const server = createServer(async (req, res) => {
     try {
       const props = JSON.parse(raw);
       if (!Array.isArray(props.clips) || !props.clips.length) return json(res,400,{error:"请先导入视频再导出"});
+      const sceneIssues=validateStoryboard(props.presentation?.scenes,props.clips);
+      if(sceneIssues.length)return json(res,400,{error:'请先检查分镜：'+sceneIssues[0].message});
+      const missing=missingSceneAssets(props.presentation?.scenes,PUBLIC);
+      if(missing.length)return json(res,400,{error:missing[0].message});
       draft = !!props.draft;
       // Remote (Pexels) B-roll is fetched by headless Chrome during the render and
       // that fetch was failing mid-way on big files. Download every remote asset
@@ -424,6 +440,7 @@ const server = createServer(async (req, res) => {
       raw = JSON.stringify(props);
     } catch (e) {
       console.error('render: could not prepare props:', e);
+      return json(res,400,{error:'导出参数或素材无效，请检查工程后重试。'});
     }
     const id = String(Date.now());
     const propsFile = path.join(ROOT, `.props-${id}.json`);
