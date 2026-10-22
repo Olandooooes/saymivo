@@ -16,4 +16,6 @@ Saymivo 基于 [AutoBroll](https://github.com/andriidrok1/autobroll)，原作者
 
 faster-whisper 下载的模型、Gemini 与 Pexels 服务/素材适用其各自条款。仓库不打包语音模型或第三方素材，不授权未经许可的人像、音频或视频使用。
 
-`docs/assets/` 中的开源演示由本仓库 `scripts/make-demo.py` 的抽象图形与预设演示文字生成，无真人、私人录音或外部素材；适用本仓库 MIT（渲染所用字体仍适用上述许可）。
+`docs/assets/demo.png` 中的开源演示由本仓库 `scripts/make-demo.py` 的抽象图形与预设演示文字生成，无真人、私人录音或外部素材；适用本仓库 MIT（渲染所用字体仍适用上述许可）。
+
+README 的 `cartoon-*.png` 为内置 imagegen 生成的原创卡通概念插图，未使用私人素材；与本仓库一同按 MIT 提供（在适用法律允许的范围内）。它们不是软件截图。生成提示词与用途见 [插图来源](docs/illustrations.md)。

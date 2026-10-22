@@ -4,7 +4,11 @@ A local Chinese talking-head video workbench built on AutoBroll, React, TypeScri
 
 [中文完整文档](README.md) · [Synthetic demo](docs/demo.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md)
 
-![Actual render of the synthetic demo](docs/assets/demo.png)
+<p align="center">
+  <img src="docs/assets/cartoon-features.png" alt="Illustrated workflow: import your recording, arrange captions and scenes, review and export" width="880" />
+</p>
+
+[Chinese illustrated walkthrough: features, how it works, and first use](README.md). The cartoon explains the concept; see the [demo page](docs/demo.md) for an actual rendered frame.
 
 The demo uses generated graphics and preset captions, with no person or voice. It demonstrates layout and animation, not transcription accuracy.
 
