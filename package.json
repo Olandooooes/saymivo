@@ -1,7 +1,7 @@
 {
   "name": "saymivo",
   "version": "0.1.0",
-  "description": "AI short-form video editor in the browser: auto-arrange takes, cut silence, human-looking captions, auto B-roll, keyframed zoom/pan — built on Remotion.",
+  "description": "Local Chinese talking-head video workbench: editable captions, terminology correction, pause trimming, storyboards and MP4 export.",
   "license": "MIT",
   "private": true,
   "keywords": [
@@ -15,7 +15,7 @@
     "video-editing"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node scripts/dev.mjs",
