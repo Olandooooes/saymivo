@@ -1,4 +1,6 @@
+import {validateStoryboard} from '../src/storyboard.mjs';
 import {PresentationTools} from './PresentationTools';
+import {ScreenCapture} from './ScreenCapture';
 import {MotionTools} from './MotionTools';
 import {Settings} from './Settings';
 import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
@@ -64,6 +66,7 @@ function pollJob(
 }
 
 const META_RELOAD = {durationInFrames: 1, fps: 30, width: 1080, height: 1920};
+const PREVIEW_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) => {
   const [assetsOpen,setAssetsOpen]=useState(false);
@@ -86,6 +89,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   const [trimming, setTrimming] = useState(false);
   const [trimLabel, setTrimLabel] = useState('');
   const [playing, setPlaying] = useState(false);
+  const [previewRate, setPreviewRate] = useState(1);
   const [boxRect, setBoxRect] = useState<{left: number; top: number; w: number; h: number} | null>(null);
   const [notice, setNotice] = useState<{msg: string; kind: 'error' | 'ok'} | null>(null);
   const notify = (msg: string, kind: 'error' | 'ok') => {
@@ -230,6 +234,8 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   });
 
   const exportVideo = async (draft = false) => {
+    const issues=validateStoryboard(presentation.scenes,clips);
+    if(issues.length){notify('请先检查分镜：'+issues[0].message,'error');return;}
     setExp({status: 'running', progress: 0});
     try {
       const r = await fetch('/api/render', {method: 'POST', body: JSON.stringify({clips, music, captions, brolls, presentation, accentColor, draft})}).then((x) => x.json());
@@ -579,6 +585,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
       </header>
 
       <div className="studio-help"><button className="asset-toggle" onClick={()=>setAssetsOpen(v=>!v)}>▦ 素材库</button><button onClick={()=>setPresentationOpen(true)}>▣ 知识讲解模板</button><button onClick={()=>setMotionOpen(true)}>✦ 内容动效 / 导入字幕</button><button onClick={()=>setSettingsOpen(true)}>⚙ 服务配置</button><span>先识别字幕 → 保护语音粗剪 → 编排动效 → 导出 · 本机自动保存</span></div>
+      <ScreenCapture/>
       {presentationOpen&&<PresentationTools onClose={()=>setPresentationOpen(false)} seek={f=>{playerRef.current?.seekTo(f);setCurrentFrame(f);}}/>}
       {motionOpen&&<MotionTools onClose={()=>setMotionOpen(false)} seek={f=>{playerRef.current?.seekTo(f);setCurrentFrame(f);}}/>}
       {settingsOpen&&<Settings onClose={()=>setSettingsOpen(false)}/>}
@@ -607,14 +614,15 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
 
         {/* Preview + transport */}
         <section aria-label="Preview" className="flex-1 bg-surface-dim flex flex-col min-w-0">
-          <div className="flex-1 flex items-center justify-center p-6 min-h-0">
-            <div className="relative" style={{height:meta.width>meta.height?'auto':'100%',width:meta.width>meta.height?'100%':'auto',aspectRatio: `${meta.width} / ${meta.height}`, maxWidth:'100%'}}>
+          <div className="flex-1 flex items-center justify-center p-6 min-h-0" style={{containerType:'size'}}>
+            <div className="relative" style={{width:`min(100cqw, calc(100cqh * ${meta.width/meta.height}))`,aspectRatio: `${meta.width} / ${meta.height}`,maxWidth:'100%',maxHeight:'100%'}}>
               <Player
                 ref={playerRef}
                 component={MultiClipVideo}
                 inputProps={inputProps}
                 durationInFrames={meta.durationInFrames}
                 fps={meta.fps}
+                playbackRate={previewRate}
                 compositionWidth={meta.width}
                 compositionHeight={meta.height}
                 style={{width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(70,69,84,0.3)'}}
@@ -671,7 +679,15 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
               />
               <IconButton icon="skip_next" size={24} label="下一片段" onClick={() => skip(1)} className="text-on-surface-variant hover:text-primary transition-colors" />
             </div>
-            <IconButton icon="fullscreen" size={20} label="全屏预览" onClick={() => playerRef.current?.requestFullscreen()} className="text-on-surface-variant hover:text-primary transition-colors" />
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1 text-[11px] text-on-surface-variant whitespace-nowrap">预览倍速
+                <select aria-label="预览倍速" className="bg-surface-container-lowest text-on-surface rounded px-1 py-1" value={previewRate} onChange={e=>{const rate=Number(e.target.value);if(PREVIEW_RATES.includes(rate))setPreviewRate(rate);}}>
+                  {PREVIEW_RATES.map(rate=><option key={rate} value={rate}>{rate}×</option>)}
+                </select>
+              </label>
+              <label className="text-[10px] text-on-surface-variant" title="输入成片帧号，暂停并精确定位">帧 <input aria-label="定位成片帧" className="w-14 bg-surface-container-lowest text-on-surface rounded px-1" type="number" min="0" max={meta.durationInFrames-1} step="1" value={currentFrame} onChange={e=>{if(e.target.value==='')return;const frame=Math.max(0,Math.min(meta.durationInFrames-1,Math.trunc(Number(e.target.value)||0)));playerRef.current?.pause();playerRef.current?.seekTo(frame);setCurrentFrame(frame);}}/></label>
+              <IconButton icon="fullscreen" size={20} label="全屏预览" onClick={() => playerRef.current?.requestFullscreen()} className="text-on-surface-variant hover:text-primary transition-colors" />
+            </div>
           </div>
         </section>
 

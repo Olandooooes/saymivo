@@ -1,3 +1,4 @@
+import {AutoMediaSettings} from './AutoMediaSettings';
 import React, {useRef, useState} from 'react';
 import type {PlayerRef} from '@remotion/player';
 import {useEditor} from './store';
@@ -198,6 +199,7 @@ export const AssetsSidebar: React.FC<{playerRef: React.RefObject<PlayerRef | nul
             </button>
           )}
           <p className="text-[10px] text-on-surface-variant/75 mt-2">优先使用你上传的素材，其次搜索 Pexels。</p>
+          <AutoMediaSettings assets={brollAssets}/>
         </section>
       </div>
     </aside>

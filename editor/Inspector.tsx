@@ -1,8 +1,13 @@
+import {CaptionReviewSave} from './CaptionReviewSave';
+import {CaptionTimingEditor} from './CaptionTimingEditor';
+import {ClipFocusTools} from './ClipFocusTools';
+import {sourceCanvasForClip, type Presentation} from '../src/presentation.mjs';
 import React, {useRef, useState} from 'react';
 import type {PlayerRef} from '@remotion/player';
 import {useEditor} from './store';
 import {clipDurationSec} from '../src/timeline';
 import {projectCaptions} from '../src/captions';
+import {SourceAudition} from './SourceAudition';
 import {projectBrolls} from '../src/Broll';
 import {IconButton} from './IconButton';
 
@@ -23,8 +28,8 @@ export const Inspector: React.FC<{
   brollLabel?: string;
 }> = ({playerRef, onGenerate, generating, progressLabel, onGenerateBroll, brollGenerating, brollLabel}) => {
   const {
-    meta, captions, clips, music, brolls, accentColor, selectedId, selectedClipId,
-    select, selectClip, setText, setTopPct, toggleAccent, pushHistory,
+    meta, captions, clips, music, brolls, accentColor, selectedId, selectedClipId, presentation, setPresentation,
+    select, selectClip, setText, setTopPct, setCaptionHold, toggleAccent, pushHistory,
     deleteClip, moveClip, setMusic, setAccentColor, setBrollMode, swapBroll, removeBroll,
     setClipVolume, toggleClipMute, setClipSpeed,
   } = useEditor();
@@ -115,8 +120,8 @@ export const Inspector: React.FC<{
                 </dl>
 
                 {/* playback speed */}
-                <label htmlFor="clip-speed" className="text-[11px] text-on-surface-variant block mt-3">速度：{(selClip.speed ?? 1).toFixed(2)}×</label>
-                <div role="group" aria-label="Speed presets" className="flex items-center gap-1 mt-1">
+                <label htmlFor="clip-speed" className="text-[11px] text-on-surface-variant block mt-3">成片速度：{(selClip.speed ?? 1).toFixed(2)}×</label>
+                <div role="group" aria-label="成片速度预设" className="flex items-center gap-1 mt-1">
                   {[0.5, 1, 1.5, 2].map((sp) => (
                     <button
                       key={sp}
@@ -133,12 +138,30 @@ export const Inspector: React.FC<{
                 </div>
                 <input
                   id="clip-speed"
+                  aria-label="所选片段成片速度"
                   type="range" min={25} max={400} step={5} value={Math.round((selClip.speed ?? 1) * 100)}
                   aria-valuetext={`${(selClip.speed ?? 1).toFixed(2)}×`}
                   onPointerDown={pushHistory}
                   onChange={(e) => setClipSpeed(selClip.id, Number(e.target.value) / 100)}
                   className="w-full mt-1 accent-primary"
                 />
+                <p className="text-[10px] text-on-surface-variant mt-1">0.25—4×，调整所选片段并用于导出；字幕与画面动效跟随变化。</p>
+                <label className="block text-[11px] mt-3">成片画幅<select aria-label="所选原片成片画幅"
+                  value={presentation.format} className="w-full mt-1 px-2 py-1 rounded bg-surface-container-lowest"
+                  onChange={e => {
+                    const format = e.target.value as Presentation['format'];
+                    if (format === 'source') {
+                      const canvas = sourceCanvasForClip(selClip);
+                      if (canvas) setPresentation({...presentation, format, canvas});
+                    } else setPresentation({...presentation, format, canvas: undefined});
+                  }}>
+                  <option value="landscape">16:9 横屏</option><option value="portrait">9:16 竖屏</option>
+                  <option value="source" disabled={!sourceCanvasForClip(selClip)}>原片比例{sourceCanvasForClip(selClip) ? ` · ${sourceCanvasForClip(selClip)!.width}×1080` : ''}</option>
+                </select></label>
+                <ClipFocusTools key={selClip.id} clip={selClip} onChange={patch => {
+                  pushHistory();
+                  useEditor.setState(state => ({clips: state.clips.map(clip => clip.id === selClip.id ? {...clip, ...patch} : clip)}));
+                }} />
 
                 {/* clip audio */}
                 <div className="flex items-center justify-between mt-3 mb-1">
@@ -202,6 +225,7 @@ export const Inspector: React.FC<{
 
                       {sel ? (
                         <div onClick={(e) => e.stopPropagation()}>
+                          {(()=>{const original=captions.find(cap=>cap.id===c.id),clip=clips.find(clip=>clip.id===original?.clipId);return original&&clip?<SourceAudition key={c.id} src={clip.src} startMs={original.startMs} endMs={original.endMs} onPlay={()=>playerRef.current?.pause()}/>:null;})()}
                           <textarea
                             aria-label="字幕文字"
                             value={text}
@@ -210,15 +234,19 @@ export const Inspector: React.FC<{
                             rows={2}
                             className="w-full mt-1 mb-3 bg-surface-container-lowest text-on-surface border border-outline-variant/40 focus:border-primary rounded p-2 text-body-md resize-y"
                           />
+                          {(()=>{const original=captions.find(cap=>cap.id===c.id),clip=clips.find(clip=>clip.id===original?.clipId);return original&&clip?<><CaptionReviewSave key={c.id} caption={original} src={clip.src}/><CaptionTimingEditor key={'timing-'+c.id} caption={original} src={clip.src}/></>:null;})()}
                           <label htmlFor="caption-top" className="text-[11px] text-on-surface-variant">垂直位置： {c.topPct}%</label>
                           <input
                             id="caption-top"
                             type="range" min={5} max={92} value={c.topPct}
                             aria-valuetext={`${c.topPct}% from the top`}
                             onPointerDown={pushHistory}
+                            onKeyDown={(e) => {if(!e.repeat&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(e.key))pushHistory();}}
                             onChange={(e) => setTopPct(c.id, Number(e.target.value))}
                             className="w-full mt-1 mb-3 accent-primary"
                           />
+                          <label className="text-[11px] text-on-surface-variant">句末延留（毫秒）<input type="number" min="0" max="1000" step="20" aria-label="字幕句末延留毫秒" disabled={c.timingScope==='cue'} value={c.holdMs??700} onFocus={pushHistory} onChange={e=>setCaptionHold(c.id,Number(e.target.value))}/></label>
+                          {c.timingScope==='cue'&&<p className="text-[11px] text-on-surface-variant">已校正整句时间，退场由上方整句结束时间控制。</p>}
                           <p id="accent-words-label" className="text-[11px] text-on-surface-variant">重点词（点击切换）</p>
                           <div role="group" aria-labelledby="accent-words-label" className="flex flex-wrap gap-1.5 mt-1.5">
                             {c.words.map((w, i) => (

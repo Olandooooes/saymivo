@@ -1,3 +1,4 @@
+import {editCaptionWords} from '../src/edit-caption-words.mjs';
 import {presentationSize,type Presentation} from '../src/presentation.mjs';
 import {create} from 'zustand';
 import type {Caption} from '../src/captions';
@@ -9,7 +10,7 @@ export type Meta = {durationInFrames: number; fps: number; width: number; height
 const HISTORY_LIMIT = 100;
 
 // one undo step = the full editable state
-type Snapshot = {clips: Clip[]; music: Music; captions: Caption[]; brolls: BrollItem[];presentation:Presentation};
+type Snapshot = {clips: Clip[]; music: Music; captions: Caption[]; brolls: BrollItem[];presentation:Presentation;accentColor:string};
 
 type EditorState = {
   meta: Meta | null;
@@ -40,6 +41,8 @@ type EditorState = {
   setCurrentFrame: (f: number) => void;
   setTopPct: (id: string, topPct: number) => void;
   setCaptionScale: (id: string, scale: number) => void;
+  setCaptionHold: (id: string, holdMs: number) => void;
+  setCaptionTiming: (id: string, startMs: number, endMs: number) => void;
   setBrollScale: (id: string, scale: number) => void;
   setText: (id: string, text: string) => void;
   toggleAccent: (id: string, wordIndex: number) => void;
@@ -83,8 +86,8 @@ const withMeta = (meta: Meta | null, clips: Clip[]): Meta | null =>
   meta ? {...meta, durationInFrames: totalDurationFrames(clips, meta.fps)} : meta;
 
 // capture the undoable slice of state
-type Snappable = {clips: Clip[]; music: Music; captions: Caption[]; brolls: BrollItem[];presentation:Presentation};
-const snap = (s: Snappable): Snapshot => ({clips: s.clips, music: s.music, captions: s.captions, brolls: s.brolls,presentation:s.presentation});
+type Snappable = {clips: Clip[]; music: Music; captions: Caption[]; brolls: BrollItem[];presentation:Presentation;accentColor:string};
+const snap = (s: Snappable): Snapshot => ({clips: s.clips, music: s.music, captions: s.captions, brolls: s.brolls,presentation:s.presentation,accentColor:s.accentColor});
 // returns the {past, future} patch to prepend to a mutation that should be undoable
 const withHistory = (s: Snappable & {past: Snapshot[]}) => ({
   past: [...s.past, snap(s)].slice(-HISTORY_LIMIT),
@@ -135,25 +138,26 @@ export const useEditor = create<EditorState>((set) => ({
   setCurrentFrame: (f) => set({currentFrame: f}),
 
   setTopPct: (id, topPct) => set((s) => ({captions: mapCap(s.captions, id, (c) => ({...c, topPct}))})),
+  setCaptionHold: (id, holdMs) => set((s) => ({captions: mapCap(s.captions, id, (c) => ({...c, holdMs:Math.max(0,Math.min(1000,holdMs))}))})),
+  setCaptionTiming: (id, startMs, endMs) => set((s) => {
+    const caption=s.captions.find(c=>c.id===id),clip=s.clips.find(c=>c.id===caption?.clipId);
+    if(!caption||!clip||!Number.isFinite(startMs)||!Number.isFinite(endMs)||endMs<=startMs||
+      startMs<clip.inSec*1000||endMs>clip.outSec*1000||s.captions.some(c=>c.id!==id&&c.clipId===caption.clipId&&startMs<c.endMs&&endMs>c.startMs))return s;
+    if(caption.startMs===startMs&&caption.endMs===endMs&&caption.holdMs===0&&caption.timingScope==='cue'&&caption.reviewOriginalTiming)return s;
+    return {...withHistory(s),captions:mapCap(s.captions,id,c=>({...c,startMs,endMs,holdMs:0,timingScope:'cue',
+      reviewOriginalTiming:c.reviewOriginalTiming??{startMs:c.startMs,endMs:c.endMs,text:c.words.map(w=>w.text).join('')}}))};
+  }),
   setCaptionScale: (id, scale) => set((s) => ({captions: mapCap(s.captions, id, (c) => ({...c, scale}))})),
   setBrollScale: (id, scale) => set((s) => ({brolls: s.brolls.map((b) => (b.id === id ? {...b, scale} : b))})),
 
-  // правка текста: ре-токенизация, равномерное распределение тайминга,
-  // сохранение акцентов по совпадению слова
+  // Proofreading keeps surviving word timestamps and accents; new text uses
+  // adjacent word spans rather than redistributing the entire sentence.
   setText: (id, text) =>
     set((s) => ({
       captions: mapCap(s.captions, id, (c) => {
-        const tokens = (text.match(/[\u3400-\u9fff]|[a-zA-Z0-9]+|[^\s]/g) ?? []);
-        if (!tokens.length) return c;
-        const accented = new Set(c.words.filter((w) => w.accent).map((w) => w.text.toLowerCase()));
-        const per = (c.endMs - c.startMs) / tokens.length;
-        const words = tokens.map((t, i) => ({
-          text: t,
-          startMs: Math.round(c.startMs + i * per),
-          endMs: Math.round(c.startMs + (i + 1) * per),
-          accent: accented.has(t.toLowerCase()),
-        }));
-        return {...c, words, motion:c.motion?{...c.motion,title:text.trim().slice(0,32),body:undefined}:undefined};
+        if(!text.trim())return c;
+        const words=editCaptionWords(c.words,text,c.startMs,c.endMs);
+        return {...c,reviewOriginalWords:c.reviewOriginalWords??c.words.map(w=>({...w})), words, motion:c.motion?{...c.motion,title:text.trim().slice(0,32),body:undefined}:undefined};
       }),
     })),
 
@@ -343,7 +347,7 @@ export const useEditor = create<EditorState>((set) => ({
       const structural = (s.music === null) !== (music === null);
       return {...(structural ? withHistory(s) : {}), music};
     }),
-  setAccentColor: (accentColor) => set({accentColor}),
+  setAccentColor: (accentColor) => set((s) => s.accentColor===accentColor?s:({...withHistory(s),accentColor})),
   setCaptions: (captions) => set({captions, selectedId: null}),
   setProjectInfo: (projectId, projectName) => set({projectId, projectName}),
   setProjectName: (projectName) => set({projectName}),
