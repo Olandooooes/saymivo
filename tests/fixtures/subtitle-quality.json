@@ -1,0 +1,140 @@
+{
+  "clips": [
+    {
+      "id": "synthetic",
+      "src": "clips/synthetic.mp4",
+      "inSec": 0,
+      "outSec": 10,
+      "sourceDurationSec": 10
+    }
+  ],
+  "captions": [
+    {
+      "id": "synthetic-0",
+      "clipId": "synthetic",
+      "startMs": 0,
+      "endMs": 700,
+      "words": [
+        {
+          "text": "第",
+          "startMs": 0,
+          "endMs": 100
+        },
+        {
+          "text": "一",
+          "startMs": 100,
+          "endMs": 200
+        },
+        {
+          "text": "步",
+          "startMs": 200,
+          "endMs": 300
+        },
+        {
+          "text": "准",
+          "startMs": 300,
+          "endMs": 400
+        },
+        {
+          "text": "备",
+          "startMs": 400,
+          "endMs": 500
+        },
+        {
+          "text": "素",
+          "startMs": 500,
+          "endMs": 600
+        },
+        {
+          "text": "材",
+          "startMs": 600,
+          "endMs": 700
+        }
+      ],
+      "timingScope": "cue"
+    },
+    {
+      "id": "synthetic-1",
+      "clipId": "synthetic",
+      "startMs": 3000,
+      "endMs": 3700,
+      "words": [
+        {
+          "text": "第",
+          "startMs": 3000,
+          "endMs": 3100
+        },
+        {
+          "text": "二",
+          "startMs": 3100,
+          "endMs": 3200
+        },
+        {
+          "text": "步",
+          "startMs": 3200,
+          "endMs": 3300
+        },
+        {
+          "text": "检",
+          "startMs": 3300,
+          "endMs": 3400
+        },
+        {
+          "text": "查",
+          "startMs": 3400,
+          "endMs": 3500
+        },
+        {
+          "text": "字",
+          "startMs": 3500,
+          "endMs": 3600
+        },
+        {
+          "text": "幕",
+          "startMs": 3600,
+          "endMs": 3700
+        }
+      ],
+      "timingScope": "cue"
+    },
+    {
+      "id": "synthetic-2",
+      "clipId": "synthetic",
+      "startMs": 6000,
+      "endMs": 6600,
+      "words": [
+        {
+          "text": "最",
+          "startMs": 6000,
+          "endMs": 6100
+        },
+        {
+          "text": "后",
+          "startMs": 6100,
+          "endMs": 6200
+        },
+        {
+          "text": "保",
+          "startMs": 6200,
+          "endMs": 6300
+        },
+        {
+          "text": "存",
+          "startMs": 6300,
+          "endMs": 6400
+        },
+        {
+          "text": "工",
+          "startMs": 6400,
+          "endMs": 6500
+        },
+        {
+          "text": "程",
+          "startMs": 6500,
+          "endMs": 6600
+        }
+      ],
+      "timingScope": "cue"
+    }
+  ]
+}
