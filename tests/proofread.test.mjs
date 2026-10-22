@@ -13,3 +13,10 @@ test('failed model falls back to local corrections with visible warning',async()
 test('context model receives transcript and glossary and its edits pass validation',async()=>{let prompt;const r=await proofreadCaptions([make('他被议为专家')],{mode:'gemini',glossary:'专家',model:async(parts)=>{prompt=parts[0].text;return {edits:[{before:'议为',after:'誉为',confidence:.99,reason:'近音错字'}]};}});assert.match(prompt,/<transcript>他被议为专家/);assert.match(prompt,/专家/);assert.equal(text(r.captions),'他被誉为专家');});
 test('glossary validates bounds and rejects malformed input',()=>{assert.throws(()=>parseGlossary(123));assert.throws(()=>parseGlossary('x'.repeat(10001)));assert.equal(parseGlossary('术语｜错词')[0].aliases[0],'错词');});
 test('malformed model confidence is not trusted',()=>{const r=applyCorrections([make('议为')],[{clipId:'clip',before:'议为',after:'誉为',confidence:'1',method:'gemini',reason:{invalid:true}}]);assert.equal(r.changes.length,0);assert.equal(typeof r.review[0].reason,'string');});
+test('unknown titlecase term in Chinese context is flagged without guessing a replacement or blocking export',async()=>{
+ const input=[make('最近有一个Skyo非常火爆。Agent和skill保留。')],before=structuredClone(input);const r=await proofreadCaptions(input);
+ assert.deepEqual(r.captions,input);assert.deepEqual(input,before);assert.equal(r.changes.length,0);
+ assert.deepEqual(r.review.map(x=>x.before),['Skyo']);assert.equal(r.review[0].kind,'unverified-term');assert.equal(r.review[0].after,undefined);assert.ok(r.review[0].endMs>r.review[0].startMs);
+ const verified=await proofreadCaptions(input,{glossary:'Skyo'});assert.equal(verified.review.length,0);
+ const english=await proofreadCaptions([make('Hello everyone welcome today')]);assert.equal(english.review.length,0);
+});
