@@ -1,3 +1,4 @@
+import {mergeChineseCaptionTails} from '../src/caption-pages.mjs';
 // In-browser caption generation for the assembled multi-clip timeline.
 //
 // Input : a JSON file (argv[2]) = {clips:[{id,src,inSec,outSec,...}]} — the
@@ -11,10 +12,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {gemini} from './gemini.mjs';
 import {spawnSync} from 'node:child_process';
-import {assembleWords} from './lib-transcribe.mjs';
+import {assembleWords,transcriptAudioClock} from './lib-transcribe.mjs';
 
 const ROOT = process.cwd();
-const PUBLIC = path.join(ROOT, 'public');
+const PUBLIC = process.env.KOUBO_PUBLIC_DIR ? path.resolve(process.env.KOUBO_PUBLIC_DIR) : path.join(ROOT, 'public');
 
 const progress = (pct, label) => console.log(`PROGRESS:${pct}:${label}`);
 
@@ -219,13 +220,13 @@ function buildCaptions(words, accentIdx, topByClip = {}) {
   for (let k = pages.length - 1; k > 0; k--) {
     const p = pages[k];
     const prev = pages[k - 1];
-    if (p.words.length === 1 && p.clipId === prev.clipId && p.start - prev.end < 350 && prev.words.length <= MAX_WORDS) {
+    if (!/[\u3400-\u9fff]/.test([...p.words,...prev.words].map(w=>w.text).join('')) && p.words.length === 1 && p.clipId === prev.clipId && p.start - prev.end < 350 && prev.words.length <= MAX_WORDS) {
       prev.words.push(...p.words);
       prev.end = p.end;
       pages.splice(k, 1);
     }
   }
-  return pages.map((p, i) => ({id: `c${i}`, clipId: p.clipId, words: p.words, startMs: p.start, endMs: p.end, topPct: topByClip[p.clipId] ?? DEFAULT_TOP}));
+  return mergeChineseCaptionTails(pages.map((p, i) => ({id: `c${i}`, clipId: p.clipId, words: p.words, startMs: p.start, endMs: p.end, topPct: topByClip[p.clipId] ?? DEFAULT_TOP})));
 }
 
 // --- run ---
@@ -238,6 +239,8 @@ const faces = await detectFaces(clips);
 const topByClip = Object.fromEntries(clips.map((c) => [c.id, faceToTop(faces[sourceKey(c)])]));
 progress(84, 'Detecting accents');
 const accents = await detectAccents(words);
-const captions = buildCaptions(words, accents, topByClip);
+const clockBySource=new Map(),clockByClip=new Map();
+for(const clip of clips){if(!clockBySource.has(clip.src))clockBySource.set(clip.src,transcriptAudioClock(clip));clockByClip.set(clip.id,clockBySource.get(clip.src));}
+const captions = buildCaptions(words, accents, topByClip).map(caption=>({...caption,audioClock:clockByClip.get(caption.clipId)}));
 fs.writeFileSync(path.join(process.env.KOUBO_OUTPUT_DIR || PUBLIC, 'captions.multi.json'), JSON.stringify(captions, null, 2));
 progress(100, `Done — ${captions.length} captions, ${accents.length} accents`);

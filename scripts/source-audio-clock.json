@@ -1,0 +1,7 @@
+{
+  "version": "source-zero-v1",
+  "timestampBasis": "source-video-presentation-ms",
+  "sampleRate": 16000,
+  "channels": 1,
+  "sampleWidthBytes": 2
+}
