@@ -7,6 +7,10 @@ import {placeClips, type Clip} from './timeline';
 
 export type CaptionWord = {text: string; startMs: number; endMs: number; accent: boolean};
 export type Caption = {
+  audioClock?: {version:string;timestampBasis:string;sourceSha256:string;wavSha256:string;sampleRate:number;channels:number;sampleWidthBytes:number;[key:string]:unknown};
+  timingScope?: 'cue'; // Cue bounds reviewed without inferring internal word onsets.
+  reviewOriginalTiming?: {startMs:number;endMs:number;text:string};
+  reviewOriginalWords?: CaptionWord[];
   motion?: import('./motion-plan').Motion;
   id: string;
   clipId?: string; // к какому клипу привязан (source-relative времена ниже)
@@ -15,6 +19,7 @@ export type Caption = {
   endMs: number;
   topPct: number;
   scale?: number; // size multiplier (1 = default), set via the on-preview slider
+  holdMs?: number; // visual hold after the spoken cue, in timeline milliseconds (default 700)
   holdMaxMs?: number; // projected only: clip's end — the visual hold must not bleed into the next clip
 };
 

@@ -1,0 +1,1 @@
+export function captionVisibility(caption:{startMs:number;endMs:number;holdMs?:number;holdMaxMs?:number},nextStart?:number,fps?:number):{from:number;durationInFrames:number;visibleEndMs:number;holdMs:number};

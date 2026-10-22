@@ -1,7 +1,10 @@
 import type {Caption} from './captions';import type {Clip} from './timeline';
 export type Chapter={id:string;clipId:string;src?:string;startMs:number;title:string};
-export type Presentation={theme:'classic'|'knowledge';format:'portrait'|'landscape';title?:string;style?:'clean'|'reference';motionPace?:'calm'|'balanced'|'brisk';chapters:Chapter[]};
+export type SourceCanvas={width:number;height:number};
+export type Presentation={emphasisTheme?:import('./emphasis-theme.mjs').EmphasisTheme;displayFont?:import('./display-fonts.mjs').DisplayFontId;theme:'classic'|'knowledge';format:'portrait'|'landscape'|'source';canvas?:SourceCanvas;title?:string;scenes?:import('./storyboard.mjs').StoryScene[];speaker?:{x?:number;y?:number;scale?:number};style?:'clean'|'reference';motionPace?:'calm'|'balanced'|'brisk';chapters:Chapter[]};
+export function validSourceCanvas(canvas:unknown):canvas is SourceCanvas;
+export function sourceCanvasForClip(clip?:Clip):SourceCanvas|null;
 export function presentationSize(p?:Presentation):{width:number;height:number};
-export function knowledgePlan(captions:Caption[],clips:Clip[],options?:{format?:string;title?:string;style?:string;motionPace?:string}):{captions:Caption[];presentation:Presentation};
+export function knowledgePlan(captions:Caption[],clips:Clip[],options?:{emphasisTheme?:import('./emphasis-theme.mjs').EmphasisTheme;displayFont?:import('./display-fonts.mjs').DisplayFontId;independentScenes?:boolean;format?:string;canvas?:SourceCanvas;title?:string;scenes?:import('./storyboard.mjs').StoryScene[];speaker?:{x?:number;y?:number;scale?:number};style?:string;motionPace?:string}):{captions:Caption[];presentation:Presentation};
 export function projectChapters(chapters:Chapter[]|undefined,clips:Clip[],fps?:number):Array<Chapter&{at:number}>;
 export function speakerBox(layout:string,width:number,height:number):{left:number;top:number;width:number;height:number;radius:number};

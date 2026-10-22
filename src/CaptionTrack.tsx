@@ -1,3 +1,5 @@
+import {captionVisibility} from './caption-visibility.mjs';
+import {readableSubtitle} from './reference-motion.mjs';
 import React from 'react';
 import {useCurrentFrame, useVideoConfig, interpolate, Sequence} from 'remotion';
 import type {Caption} from './captions';
@@ -8,11 +10,11 @@ const FONT = 'Inter, -apple-system, system-ui, sans-serif';
 const ACCENT = '#FFB020';
 
 // один блок субтитров (внутри своего Sequence)
-const CaptionPage: React.FC<{caption: Caption; accentColor: string; durationInFrames: number;reference?:boolean}> = ({caption, accentColor, durationInFrames,reference}) => {
+const CaptionPage: React.FC<{caption: Caption; accentColor: string; durationInFrames: number;reference?:boolean;minimal?:boolean}> = ({caption, accentColor, durationInFrames,reference,minimal}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const absMs = caption.startMs + (frame / fps) * 1000;
-  const fontSize = Math.round((reference?68:62) * (caption.scale ?? 1));
+  const fontSize = Math.round((reference?(minimal?60:68):62) * (caption.scale ?? 1));
 
   // soft cross-dissolve: fade in at the start, fade out near the end so a page
   // doesn't snap away the instant the last word is spoken.
@@ -49,10 +51,10 @@ const CaptionPage: React.FC<{caption: Caption; accentColor: string; durationInFr
          flexWrap: 'wrap',
          gap: caption.words.some(w=>/[\u3400-\u9fff]/.test(w.text)) ? '0 1px' : '0 16px',
          fontFamily: reference?'PingFang SC,Microsoft YaHei,sans-serif':FONT,
-         background:reference?'#16181c9e':undefined,padding:reference?'10px 24px':undefined,borderRadius:reference?10:undefined,
+         background:reference?(minimal?'#20262245':'#16181c9e'):undefined,padding:reference?(minimal?'5px 13px':'10px 24px'):undefined,borderRadius:reference?(minimal?5:10):undefined,
        }}
      >
-      {caption.words.map((w, i) => {
+      {reference?<span style={{fontSize,fontWeight:minimal?600:650,color:'#fff',WebkitTextStroke:minimal?'.6px #202421':'1px #111',paintOrder:'stroke fill',lineHeight:1.25,textShadow:minimal?'0 1px 4px #0008':'0 2px 7px #0009',textAlign:'center'}}>{readableSubtitle(caption.words)}</span>:caption.words.map((w, i) => {
         const active = absMs >= w.startMs && absMs <= w.endMs;
         const color = w.accent ? accentColor : active ? '#ffffff' : 'rgba(255,255,255,0.78)';
         return (
@@ -82,8 +84,8 @@ const CaptionPage: React.FC<{caption: Caption; accentColor: string; durationInFr
 // каждая фраза = свой Sequence
 export const CaptionTrack: React.FC<{
   captions: Caption[];
-  accentColor?: string;reference?:boolean;
-}> = ({captions, accentColor = ACCENT,reference}) => {
+  accentColor?: string;reference?:boolean;minimal?:boolean;
+}> = ({captions, accentColor = ACCENT,reference,minimal}) => {
   const {fps} = useVideoConfig();
   if (!captions?.length) return null;
 
@@ -91,12 +93,11 @@ export const CaptionTrack: React.FC<{
     <>
       {captions.map((c, i) => {
         const nextStart = captions[i + 1]?.startMs ?? Infinity;
-        const visEnd = Math.min(nextStart, c.endMs + 700, c.holdMaxMs ?? Infinity);
-        const from = Math.round((c.startMs / 1000) * fps);
-        const dur = Math.max(1, Math.round(((visEnd - c.startMs) / 1000) * fps));
+        const {from,durationInFrames:dur}=captionVisibility(c,nextStart,fps);
+        if(!dur)return null;
         return (
           <Sequence key={c.id} from={from} durationInFrames={dur} layout="none" name={c.words.map((w) => w.text).join(' ')}>
-            <CaptionPage caption={c} accentColor={accentColor} reference={reference} durationInFrames={dur} />
+            <CaptionPage caption={c} accentColor={accentColor} reference={reference} minimal={minimal} durationInFrames={dur} />
           </Sequence>
         );
       })}

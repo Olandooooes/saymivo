@@ -5,6 +5,14 @@
 
 // a keyframe ("flag") pins a transform at a source-relative time inside the clip
 export type Keyframe = {t: number; scale: number; x: number; y: number};
+export type ClipRect = {x: number; y: number; w: number; h: number};
+export type ClipFocusWindow = {
+  id: string;
+  startSec: number; // absolute seconds in the original source, before trim/speed
+  endSec: number;
+  sourceRect: ClipRect; // normalized intrinsic source coordinates
+  targetRect: ClipRect; // normalized output canvas coordinates
+};
 
 export type Clip = {
   id: string; // unique, stable per take (e.g. "IMG_0227")
@@ -17,6 +25,11 @@ export type Clip = {
   volume?: number; // clip audio gain, 1 = original
   muted?: boolean; // hard-mute the clip's own audio
   speed?: number; // playback rate (0.25..4), 1 = normal; timeline duration = source/speed
+  fit?: 'contain' | 'cover'; // default cover preserves existing projects
+  sourceWidth?: number;
+  sourceHeight?: number;
+  showCaptions?: boolean; // hides only added caption display, not editable transcription
+  focusWindows?: ClipFocusWindow[];
 };
 
 const lerp = (a: number, b: number, f: number) => a + (b - a) * f;

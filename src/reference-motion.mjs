@@ -1,3 +1,4 @@
+import {normalizeSubtitleTerms} from './subtitle-terms.mjs';
 const endOf=c=>c.motion?.holdEndMs??c.endMs;
 export const easeOut=t=>1-(1-Math.max(0,Math.min(1,t)))**3;
 export function sceneEnvelope(ms,start,end,pace='balanced'){
@@ -29,7 +30,22 @@ export function projectScenes(captions,clips,fps=30){
  return out.sort((a,b)=>a.startMs-b.startMs);
 }
 export function headlineLines(text,limit=8){
- const words=text.trim().match(/[A-Za-z][A-Za-z0-9]*|\d+(?:\.\d+)?[%亿万倍秒天个]?|[^\s]/g)??[];
- const lines=[];let line='',weight=0;
- for(const word of words){const w=/^[A-Za-z]/.test(word)?word.length*.55:word.length;if(line&&weight+w>limit){lines.push(line);line='';weight=0;}line+=word;weight+=w;}if(line)lines.push(line);return lines;
+ const lines=[];
+ for(const paragraph of String(text).split(/\r?\n/)){
+  const words=paragraph.trim().match(/[A-Za-z][A-Za-z0-9]*|\d+(?:\.\d+)?[%亿万倍秒天个]?|\s+|[^\s]/g)??[];
+  let line='',weight=0,pendingSpace=false;
+  for(const word of words){if(/^\s+$/.test(word)){pendingSpace=true;continue;}
+   const gap=pendingSpace&&/[A-Za-z0-9]$/.test(line)&&/^[A-Za-z0-9]/.test(word)?' ':'';
+   const w=/^[A-Za-z]/.test(word)?word.length*.55:word.length;
+   if(line&&weight+w+(gap?.3:0)>limit){lines.push(line);line='';weight=0;}
+   line+=(line?gap:'')+word;weight+=w+(line&&gap?.3:0);pendingSpace=false;
+  }if(line)lines.push(line);
+ }return lines;
+}
+export function readableSubtitle(words){
+ let text='';for(const word of words){const next=typeof word==='string'?word:word.text;
+  const space=/[A-Za-z0-9]$/.test(text)&&/^[A-Za-z0-9]/.test(next)?' ':'';text+=space+next;
+ }
+ // Known technical terms may arrive as character/subword tokens after ASR or correction.
+ return normalizeSubtitleTerms(text);
 }

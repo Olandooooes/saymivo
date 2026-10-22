@@ -9,6 +9,7 @@ import {totalDurationFrames} from './timeline';
 // in Studio they fall back to the files on disk.
 export const RemotionRoot: React.FC = () => {
   return (
+    <>
     <Composition
       id="MultiClip"
       component={MultiClipVideo}
@@ -40,5 +41,15 @@ export const RemotionRoot: React.FC = () => {
         };
       }}
     />
+    <Composition
+      id="ReferencePreview" component={MultiClipVideo}
+      fps={30} width={1920} height={1080} durationInFrames={1}
+      defaultProps={{clips: [], captions: [], brolls: [], music: null}}
+      calculateMetadata={async () => {
+        const project=await fetch(staticFile("preview-project.json")).then(r=>{if(!r.ok)throw Error("No local preview project");return r.json();}).catch(()=>({clips:[],captions:[],brolls:[],music:null}));
+        return {fps:30,...presentationSize(project.presentation),durationInFrames:Math.max(1,totalDurationFrames(project.clips??[],30)),props:project};
+      }}
+    />
+    </>
   );
 };
