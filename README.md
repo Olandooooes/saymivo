@@ -102,6 +102,8 @@ npm run check
 
 [开发架构](docs/architecture.md) · [贡献指南](CONTRIBUTING.md) · [路线图](docs/roadmap.md) · [安全报告](SECURITY.md)
 
+制作过程中的问题与改进：[口播工作台夜间返工失败复盘](docs/retrospectives/2026-10-22-overnight-review.md)，附流程、动作规格与验收边界说明图。
+
 ## 来源与许可
 
 Saymivo 基于 [AutoBroll](https://github.com/andriidrok1/autobroll) 扩展，保留原作者的 [MIT 版权声明](LICENSE)。[来源快照](UPSTREAM.json) 和 [上游说明](README.upstream.md) 可供核对。`koubo-studio` 为旧目录/内部兼容标识，`AUTOBROLL_*` 保留配置兼容。
