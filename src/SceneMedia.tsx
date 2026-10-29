@@ -1,15 +1,17 @@
+import {imageSequenceState} from './image-window-plan.mjs';
 import React,{useId} from 'react';
 import {Freeze,Img,OffthreadVideo,Video,Sequence,staticFile,useVideoConfig,getRemotionEnvironment} from 'remotion';
 import type {StoryScene} from './storyboard.mjs';
-import {fittedMediaRect,sampleMediaCamera,sampleMediaCursor,activeHighlights,sampleFocusRegions} from './scene-media.mjs';
+import {fittedMediaRect,sampleMediaWindow,sampleMediaCamera,sampleMediaCursor,activeHighlights,sampleFocusRegions} from './scene-media.mjs';
 import {easeOut} from './reference-motion.mjs';
-export function SceneMedia({scene,elapsed,width,height}:{scene:StoryScene;elapsed:number;width:number;height:number}){
+function OneSceneMedia({scene,elapsed,width,height,windowElapsed}:{scene:StoryScene;elapsed:number;width:number;height:number;windowElapsed?:number}){
  const {fps}=useVideoConfig(),media=scene.media!,maskId=useId().replace(/[^a-zA-Z0-9]/g,'');
- const rect=fittedMediaRect(media.width,media.height,width,height,media.fit),camera=sampleMediaCamera(media,elapsed),cursor=sampleMediaCursor(media.cursor,elapsed);
+ const windowBox=sampleMediaWindow(media,windowElapsed??elapsed);
+ const rect=fittedMediaRect(media.width,media.height,width*windowBox.width,height*windowBox.height,media.fit),camera=sampleMediaCamera(media,elapsed),cursor=sampleMediaCursor(media.cursor,elapsed);
  const regions=activeHighlights(scene.highlights,elapsed),focus=sampleFocusRegions((scene.highlights??[]).filter(r=>r.mode==='spotlight'||(!r.mode&&scene.layout==='spotlight')),elapsed);
  const Media=getRemotionEnvironment().isRendering?OffthreadVideo:Video;
  const video=<Media src={staticFile(media.src)} trimBefore={media.freezeAtSec===undefined?Math.round((media.startSec??0)*fps):0} playbackRate={media.freezeAtSec===undefined?(media.rate??1)*(scene.speed??1):1} muted style={{width:'100%',height:'100%',objectFit:'fill'}}/>;
- return <div style={{position:'absolute',inset:0,overflow:'hidden',background:media.kind==='video'?'#101216':'#e7e5df'}}>
+ return <div data-media-window={scene.id} style={{position:'absolute',...(media.windowKeyframes?.length?{left:windowBox.x*width,top:windowBox.y*height,width:windowBox.width*width,height:windowBox.height*height,borderRadius:16,boxShadow:'0 12px 34px #08132b33',transformOrigin:'top left'}:{inset:0}),overflow:'hidden',background:media.kind==='video'?'#101216':'#e7e5df'}}>
   <div data-media-plane={scene.id} style={{position:'absolute',...rect,transform:`translate(${camera.x}%,${camera.y}%) scale(${camera.scale})`,transformOrigin:'center'}}>
    {media.kind==='image'?<Img src={staticFile(media.src)} style={{width:'100%',height:'100%'}}/>:media.freezeAtSec!==undefined?<Freeze frame={Math.round(media.freezeAtSec*fps)}>{video}</Freeze>:<Sequence from={Math.round(((scene.phaseStartMs??scene.startMs)-scene.startMs)/1000*fps)} premountFor={fps}>{video}</Sequence>}
    <svg data-annotations={scene.id} viewBox="0 0 1000 1000" preserveAspectRatio="none" style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'visible'}}>
@@ -22,4 +24,12 @@ export function SceneMedia({scene,elapsed,width,height}:{scene:StoryScene;elapse
    {cursor&&<svg data-cursor="illustrative" width="32" height="42" viewBox="0 0 30 40" style={{position:'absolute',left:`${cursor.x*100}%`,top:`${cursor.y*100}%`,filter:'drop-shadow(1px 2px 2px #0008)',overflow:'visible'}}><path d="M2 2L24 23L15 24L22 36L16 39L10 27L2 34Z" fill="#17191c" stroke="white" strokeWidth="2"/></svg>}
   </div>
  </div>;
+}
+
+// One reusable outer window, with independently timed image cameras and overlap
+// during handoff. Existing single-image/video scenes retain their exact branch.
+export function SceneMedia(props:{scene:StoryScene;elapsed:number;width:number;height:number}){
+ const {scene,elapsed,width,height}=props,media=scene.media!;
+ if(!media.sequence?.length)return <OneSceneMedia {...props}/>;
+ return <div data-image-window-sequence={scene.id} style={{position:'absolute',inset:0}}>{imageSequenceState(media,elapsed).map(({item,index,opacity,elapsed:local,shift})=><div key={item.id} data-window-image={item.id} data-window-index={index} style={{position:'absolute',inset:0,opacity,transform:`translateX(${shift*width}px)`}}><OneSceneMedia scene={{...scene,media:{...media,...item,kind:'image',sequence:undefined}}} elapsed={local} windowElapsed={elapsed} width={width} height={height}/></div>)}</div>;
 }

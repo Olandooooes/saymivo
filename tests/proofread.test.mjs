@@ -20,3 +20,55 @@ test('unknown titlecase term in Chinese context is flagged without guessing a re
  const verified=await proofreadCaptions(input,{glossary:'Skyo'});assert.equal(verified.review.length,0);
  const english=await proofreadCaptions([make('Hello everyone welcome today')]);assert.equal(english.review.length,0);
 });
+test('same-length correction inside a multi-character word never invents character clocks',()=>{
+ const c={...make('占位'),words:[{text:'这个复线功能',startMs:1000,endMs:3000,accent:false}],startMs:1000,endMs:3000};
+ const r=applyCorrections([c],[{clipId:'clip',before:'复线',after:'复现',method:'local',confidence:1}]);
+ assert.deepEqual(r.captions[0].words,[{text:'这个复现功能',startMs:1000,endMs:3000,accent:false}]);
+});
+test('contextual homophones require source-bound, time-local audio evidence',async()=>{
+ const c=make('复线这个软件的功能');c.audioClock={sourceSha256:'source-a'};
+ const options={audioEvidence:[{clipId:'clip',sourceSha256:'source-a',startMs:0,endMs:2000,text:'复现这个软件',verified:true,words:[{word:'复现',startMs:0,endMs:200}]}]};
+ assert.equal((await proofreadCaptions([c])).changes.length,0);
+ const good=await proofreadCaptions([c],options);assert.match(text(good.captions),/^复现/);
+ for(const patch of [{sourceSha256:'other'},{words:[{word:'复现',startMs:1500,endMs:1800}]}]){
+  const bad=await proofreadCaptions([c],{audioEvidence:[{...options.audioEvidence[0],...patch}]});assert.equal(bad.changes.length,0);
+ }
+ const railway=make('铁路复线这个软件仅展示轨道');railway.audioClock=c.audioClock;
+ assert.equal((await proofreadCaptions([railway],options)).changes.length,0);
+});
+test('full-name case does not invent an expansion or join ordinary English words',async()=>{
+ const r=await proofreadCaptions([make('全称是reverse engineer anything。')]);
+ assert.match(text(r.captions),/Reverse Engineer Anything/);
+ const unknown=await proofreadCaptions([make('这个项目叫XYZ')]);assert.equal(text(unknown.captions),'这个项目叫XYZ');
+});
+test('abbreviation consistency cannot expand another name without same-source audio',async()=>{
+ const c=make('ABC项目ABC功能，BC公司。');c.audioClock={sourceSha256:'acronym-source'};
+ assert.equal(text((await proofreadCaptions([c])).captions),'ABC项目ABC功能，BC公司。');
+ const at=c.words.map(w=>w.text).join('').lastIndexOf('BC');
+ const r=await proofreadCaptions([c],{audioEvidence:[{clipId:'clip',sourceSha256:'acronym-source',startMs:0,endMs:3000,verified:true,text:'ABC',words:[{word:'ABC',startMs:at*100,endMs:(at+2)*100}]}]});
+ assert.match(text(r.captions),/ABC公司/);
+});
+test('homophone spelling uses domain context after acoustic sound agreement, never another pronunciation',async()=>{
+ const c=make('软件复线这个功能');c.audioClock={sourceSha256:'same'};
+ const evidence={clipId:'clip',sourceSha256:'same',startMs:0,endMs:3000,verified:true,text:'复线',words:[{word:'复线',startMs:200,endMs:400}]};
+ assert.match(text((await proofreadCaptions([c],{audioEvidence:[evidence]})).captions),/软件复现/);
+ evidence.words[0].word='复制';assert.equal((await proofreadCaptions([c],{audioEvidence:[evidence]})).changes.length,0);
+});
+test('case-only English full name may span a real pause without retiming or filling silence',async()=>{
+ const a=make('全称是reverse','a'),b=make(' engineer anything','b','clip',3000);
+ const r=await proofreadCaptions([a,b]);assert.match(text(r.captions),/Reverse Engineer Anything/);
+ assert.deepEqual(r.captions.flatMap(c=>c.words).map(w=>[w.startMs,w.endMs]),[a,b].flatMap(c=>c.words).map(w=>[w.startMs,w.endMs]));
+});
+test('known names with arbitrary subword spaces normalize while English sentences keep spaces',async()=>{
+ const r=await proofreadCaptions([make('Chat GPT和Open AI。AI agents can help me')]);
+ assert.equal(text(r.captions),'ChatGPT和OpenAI。AI agents can help me');
+});
+test('a narrow aspirated-initial ASR confusion can support an explicit English-name introduction',async()=>{
+ const c=make('全征式reverse engineer anything');c.audioClock={sourceSha256:'source'};
+ const e={clipId:'clip',sourceSha256:'source',startMs:0,endMs:4000,verified:true,text:'全征是',words:[{word:'全征是',startMs:0,endMs:300}]};
+ assert.match(text((await proofreadCaptions([c],{audioEvidence:[e]})).captions),/^全称是/);
+ e.words[0].word='全正是';assert.equal((await proofreadCaptions([c],{audioEvidence:[e]})).changes.some(x=>x.after==='全称是'),false);
+});
+test('full-name display preserves existing mixed-case brands and acronyms',async()=>{
+ const r=await proofreadCaptions([make('全称是iPhone API和其他内容')]);assert.equal(text(r.captions),'全称是iPhone API和其他内容');
+});

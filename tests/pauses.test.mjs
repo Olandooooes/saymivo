@@ -18,3 +18,19 @@ test('the quiet English opening keeps at least 150ms before its reviewed word on
  const segments=pauseSegments({inSec:0,outSec:8},[[.2,3.328]],[{startMs:3250,endMs:3950},{startMs:3950,endMs:4450},{startMs:4510,endMs:6310}]);
  assert(segments[0].inSec<=3.1);
 });
+
+test('pause guards use the union of engineering captions and independent source words',async()=>{
+ const {protectedPauseWords,assertPauseWordSafety}=await import('../scripts/pause-plan.mjs');
+ const clip={inSec:0,outSec:12};
+ const words=protectedPauseWords([{startMs:1500,endMs:2000},{startMs:8000,endMs:9000}],[{startMs:6800,endMs:7200},{startMs:8000,endMs:9000}]);
+ assert.equal(words.length,3);
+ const segments=assertPauseWordSafety(clip,pauseSegments(clip,[[2.2,7.5]],words),words);
+ assert(segments.some(s=>s.inSec<=6.8&&s.outSec>=7.2),'quiet independently recognized onset is retained');
+ assert.throws(()=>assertPauseWordSafety(clip,[{inSec:0,outSec:3},{inSec:7,outSec:12}],words));
+});
+test('head and tail cuts cannot silently discard a protected low-volume or stretched word',async()=>{
+ const {assertPauseWordSafety}=await import('../scripts/pause-plan.mjs');
+ const c={inSec:0,outSec:10},words=[{startMs:300,endMs:700},{startMs:9000,endMs:9800}];
+ assert.doesNotThrow(()=>assertPauseWordSafety(c,pauseSegments(c,[[0,.6],[9.2,10]],words),words));
+ assert.throws(()=>assertPauseWordSafety(c,[{inSec:.4,outSec:9.5}],words));
+});

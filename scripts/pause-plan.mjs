@@ -23,3 +23,19 @@ export function pauseSegments(clip,gaps,words=[]){
  }
  return segments.filter(s=>s.outSec>s.inSec&&(s.outSec-s.inSec>=.35||speech.some(w=>w.startMs/1000<s.outSec&&w.endMs/1000>s.inSec)));
 }
+
+
+// Union protections from independently clocked observations, not just one cue track.
+export function protectedPauseWords(...groups){
+ const seen=new Set();return groups.flat().filter(w=>{
+  if(!Number.isFinite(w?.startMs)||!Number.isFinite(w?.endMs)||w.endMs<=w.startMs)return false;
+  const key=`${w.startMs}:${w.endMs}`;if(seen.has(key))return false;seen.add(key);return true;
+ }).sort((a,b)=>a.startMs-b.startMs||a.endMs-b.endMs);
+}
+export function assertPauseWordSafety(clip,segments,words){
+ for(const w of words){
+  const start=Math.max(clip.inSec,w.startMs/1000),end=Math.min(clip.outSec,w.endMs/1000);
+  if(end>start&&!segments.some(s=>s.inSec<=start+1e-8&&s.outSec>=end-1e-8))throw Error('停顿计划触及受保护原声词范围，未应用');
+ }
+ return segments;
+}

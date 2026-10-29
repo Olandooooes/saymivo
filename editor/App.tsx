@@ -1,7 +1,9 @@
 import React, {useEffect, useState} from 'react';
 import {useEditor} from './store';
 import {Editor} from './Editor';
-import {Start, type ProjectMeta} from './Start';
+import {Start, type ProjectMeta, type ManualProjectSettings} from './Start';
+import {displayFontConfig} from '../src/display-fonts.mjs';
+import {validEmphasisTheme, type EmphasisTheme} from '../src/emphasis-theme.mjs';
 
 const META0 = {durationInFrames: 1, fps: 30, width: 1080, height: 1920};
 
@@ -34,7 +36,14 @@ export const App: React.FC = () => {
   };
 
   // new project: Start already populated clips via upload; assign an id and go
-  const newProject = () => {
+  const newProject = (options: ManualProjectSettings) => {
+    const state = useEditor.getState();
+    state.setPresentation({...state.presentation, format: options.format, canvas: undefined,
+      theme: options.template === 'classic' ? 'classic' : 'knowledge',
+      style: options.template === 'reference' ? 'reference' : 'clean',
+      displayFont: displayFontConfig(options.displayFont)?.id,
+      emphasisTheme: validEmphasisTheme(options.emphasisTheme) ? options.emphasisTheme as EmphasisTheme : undefined,
+      motionPace: options.motionPace === 'calm' || options.motionPace === 'brisk' ? options.motionPace : 'balanced'});
     setProjectInfo(`p-${Date.now()}`, '未命名口播');
     setView('editor');
   };

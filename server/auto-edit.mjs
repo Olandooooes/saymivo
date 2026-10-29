@@ -1,3 +1,4 @@
+import {proofreadSourceCaptions} from './proofread-source.mjs';
 import {visualLayoutSamples,applyVisualProfileLayout} from './auto-visual-layout.mjs';
 import {validEmphasisTheme} from '../src/emphasis-theme.mjs';
 import {displayFontConfig} from '../src/display-fonts.mjs';
@@ -13,7 +14,7 @@ import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {randomUUID,createHash} from 'node:crypto';
 import {applyTrimPlan,automaticMotionPlan,styleCaptions} from './auto-plan.mjs';
-import {proofreadCaptions,readProofreadSettings,parseGlossary} from './proofread.mjs';
+import {readProofreadSettings,parseGlossary} from './proofread.mjs';
 import {gemini} from '../scripts/gemini.mjs';
 
 export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile,isManualBusy}){
@@ -36,7 +37,7 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
  async function execute(id,input){
   const jobDir=path.join(jobsRoot,id),projectId=`auto-${id}`,output=path.join(PUBLIC,'exports',`${projectId}.mp4`);
   const accurateModel=path.join(ROOT,'.models','whisper-medium');
-  const env={KOUBO_OUTPUT_DIR:jobDir,KOUBO_LOCAL_ONLY:'1',AUTOBROLL_FACE_AWARE:'0',...(fs.existsSync(path.join(accurateModel,'model.bin'))?{AUTOBROLL_MODEL:accurateModel}:{})};
+  const env={KOUBO_OUTPUT_DIR:jobDir,KOUBO_LOCAL_ONLY:'1',KOUBO_SKIP_PROOFREAD:'1',AUTOBROLL_FACE_AWARE:'0',...(fs.existsSync(path.join(accurateModel,'model.bin'))?{AUTOBROLL_MODEL:accurateModel}:{})};
   if(input.glossary)env.AUTOBROLL_PROMPT='普通话口播，保留原话，注意这些专有名词：'+parseGlossary(input.glossary).map(t=>t.term).join('、').slice(0,500);
   let p={presentation:{theme:'classic',format:input.format,chapters:[]},name:input.name||'一键口播',clips:input.clips,captions:[],brolls:[],brollAssets:[],music:null,accentColor:'#d8f99a'};
   try{
@@ -54,7 +55,7 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
    projectSave(projectId+'-source',{...p,name:p.name+' · 原字幕'});
    if(input.proofreadMode!=='off'){
     stage(id,2,input.proofreadMode==='gemini'?'结合上下文校对字幕与专有名词':'校对术语、英文写法与近音错字',36);
-    const report=await proofreadCaptions(p.captions,{glossary:input.glossary,mode:input.proofreadMode,model:gemini,signal:running.get(id).controller.signal});
+    const report=await proofreadSourceCaptions(p.captions,{root:ROOT,clips:p.clips,outputDir:jobDir,glossary:input.glossary,mode:input.proofreadMode,model:gemini,signal:running.get(id).controller.signal});
     if(read(id)?.status==='cancelled')throw Error('已取消');
     p.captions=report.captions;const {captions:_,...summary}=report;
     fs.writeFileSync(path.join(jobDir,'proofread.json'),JSON.stringify(summary,null,2));

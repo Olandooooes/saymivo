@@ -4,3 +4,4 @@ export function sampleMediaCamera(media?:SceneMedia,ms?:number):{x:number;y:numb
 export function sampleMediaCursor(points?:SceneCursorPoint[],ms?:number):{x:number;y:number;clickAge:number|null;clickX?:number;clickY?:number}|null;
 export function activeHighlights(regions?:SceneHighlight[],ms?:number):SceneHighlight[];
 export function sampleFocusRegions(regions?:SceneHighlight[],ms?:number,transitionMs?:number):SceneHighlight[];
+export function sampleMediaWindow(media?:SceneMedia,ms?:number):{x:number;y:number;width:number;height:number};

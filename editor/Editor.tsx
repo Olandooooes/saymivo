@@ -1,4 +1,12 @@
+import {regenerateCaptions} from '../src/regenerate-captions.mjs';
+import {PauseReviewDialog} from './PauseReviewDialog';
+import type {AutocutPlan} from '../src/apply-autocut-project.mjs';
 import {validateStoryboard} from '../src/storyboard.mjs';
+import {preExportAudit, type PreExportAdvisory} from '../src/pre-export-audit.mjs';
+import {retakeSourceFrame} from '../src/retake-plan.mjs';
+import {applyRetakePlanToStore} from './apply-retake-plan.mjs';
+import {RetakeDialog} from './RetakeDialog';
+import {MotionLibrary} from './MotionLibrary';
 import {PresentationTools} from './PresentationTools';
 import {ScreenCapture} from './ScreenCapture';
 import {MotionTools} from './MotionTools';
@@ -73,6 +81,8 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   const [presentationOpen,setPresentationOpen]=useState(false);
   const [motionOpen,setMotionOpen]=useState(false);
   const [settingsOpen,setSettingsOpen]=useState(false);
+  const [retakeOpen,setRetakeOpen]=useState(false);
+  const [motionLibraryOpen,setMotionLibraryOpen]=useState(false);
   const {
     meta, projectId, projectName, clips, music, captions, brolls, presentation, accentColor, selectedId, currentFrame, past, future,
     brollAssets, dupSuggestion, selectedClipId, select, selectClip, setCurrentFrame, setTopPct, setCaptionScale, setBrollScale, setKeyframe, removeKeyframe, setCaptions, setBrolls, setClipOrder, applyAutocut, removeClips, setDupSuggestion, setProjectName, pushHistory, undo, redo,
@@ -80,6 +90,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   const playerRef = useRef<PlayerRef>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [exp, setExp] = useState<{status: string; progress?: number; file?: string} | null>(null);
+  const [audit, setAudit] = useState<PreExportAdvisory[] | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genLabel, setGenLabel] = useState('');
   const [brollGen, setBrollGen] = useState(false);
@@ -90,6 +101,9 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   const [trimLabel, setTrimLabel] = useState('');
   const [playing, setPlaying] = useState(false);
   const [previewRate, setPreviewRate] = useState(1);
+  const [exportRate, setExportRate] = useState(1);
+  const [previewMuted, setPreviewMuted] = useState(true);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
   const [boxRect, setBoxRect] = useState<{left: number; top: number; w: number; h: number} | null>(null);
   const [notice, setNotice] = useState<{msg: string; kind: 'error' | 'ok'} | null>(null);
   const notify = (msg: string, kind: 'error' | 'ok') => {
@@ -200,15 +214,29 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
     const onFrame = (e: {detail: {frame: number}}) => setCurrentFrame(e.detail.frame);
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+    const onMute = (e: {detail: {isMuted: boolean}}) => setPreviewMuted(e.detail.isMuted);
+    const onFullscreen = (e: {detail: {isFullscreen: boolean}}) => setPreviewFullscreen(e.detail.isFullscreen);
+    setPreviewMuted(p.isMuted());
+    setPreviewFullscreen(p.isFullscreen());
     p.addEventListener('frameupdate', onFrame);
     p.addEventListener('play', onPlay);
     p.addEventListener('pause', onPause);
+    p.addEventListener('mutechange', onMute);
+    p.addEventListener('fullscreenchange', onFullscreen);
     return () => {
       p.removeEventListener('frameupdate', onFrame);
       p.removeEventListener('play', onPlay);
       p.removeEventListener('pause', onPause);
+      p.removeEventListener('mutechange', onMute);
+      p.removeEventListener('fullscreenchange', onFullscreen);
     };
   }, [meta, setCurrentFrame]);
+
+  // Preview audio belongs to the Player only; opening a project starts silent.
+  useEffect(() => {
+    playerRef.current?.mute();
+    setPreviewMuted(true);
+  }, [projectId]);
 
   // Measure the selected caption/b-roll element in the preview DOM and draw a
   // selection box over it. Runs every render (guarded) so the box tracks the
@@ -233,12 +261,17 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
     );
   });
 
+  const checkEdit = () => setAudit(preExportAudit({clips, captions, presentation}, {fps: meta?.fps ?? 30}));
+
   const exportVideo = async (draft = false) => {
     const issues=validateStoryboard(presentation.scenes,clips);
     if(issues.length){notify('请先检查分镜：'+issues[0].message,'error');return;}
+    checkEdit();
     setExp({status: 'running', progress: 0});
     try {
-      const r = await fetch('/api/render', {method: 'POST', body: JSON.stringify({clips, music, captions, brolls, presentation, accentColor, draft})}).then((x) => x.json());
+      const response=await fetch('/api/render', {method: 'POST', body: JSON.stringify({clips, music, captions, brolls, presentation, accentColor, draft, exportRate})});
+      const r=await response.json();
+      if(!response.ok||typeof r.jobId!=='string')throw Error(r.error??'未能启动导出，请检查分镜和素材。');
       pollJob(
         '/api/render', r.jobId,
         (s) => setExp({status: 'running', progress: s.progress ?? 0}),
@@ -250,13 +283,14 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
         (msg) => { setExp({status: 'error'}); notify('Export failed: ' + msg, 'error'); },
         2400, // renders can take a while — allow up to ~1h
       );
-    } catch {
+    } catch (error) {
       setExp({status: 'error'});
-      notify('Could not start export', 'error');
+      notify(error instanceof Error?error.message:'Could not start export', 'error');
     }
   };
 
   const generateCaptions = async () => {
+    const signature=JSON.stringify({projectId:useEditor.getState().projectId,clips,captions});
     setGenerating(true);
     setGenLabel('Starting…');
     try {
@@ -266,25 +300,18 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
         (s) => setGenLabel(`${s.label ?? ''} ${s.progress ?? 0}%`),
         async () => {
           const fresh = await fetch(`/captions.multi.json?_=${Date.now()}`).then((x) => x.json()).catch(() => []);
-          // MERGE: keep existing captions (incl. manual edits) — but a clip only
-          // counts as "covered" if it has a VISIBLE caption (inside its trim
-          // window). Orphans (deleted clips) are dropped; out-of-window leftovers
-          // don't block fresh captions anymore.
-          const clipById = new Map(clips.map((c) => [c.id, c]));
-          const isVisible = (c: {clipId?: string; startMs: number; endMs: number}) => {
-            if (!c.clipId) return true; // legacy absolute caption — keep
-            const cl = clipById.get(c.clipId);
-            if (!cl) return false; // orphan
-            return c.startMs < cl.outSec * 1000 && c.endMs > cl.inSec * 1000;
-          };
-          const kept = captions.filter((c) => !c.clipId || clipById.has(c.clipId)); // drop orphans
-          const covered = new Set(kept.filter(isVisible).map((c) => c.clipId).filter(Boolean));
-          const added = (Array.isArray(fresh) ? fresh : []).filter((c) => c.clipId && !covered.has(c.clipId));
-          const merged = [...kept, ...added].map((c, i) => ({...c, id: `c${i}`}));
+          if(signature!==JSON.stringify({projectId:useEditor.getState().projectId,clips:useEditor.getState().clips,captions:useEditor.getState().captions})){
+            setGenerating(false);notify('分析期间工程已改变，新字幕未覆盖当前编辑。','error');return;
+          }
+          let merged;
+          try{merged=regenerateCaptions(captions,Array.isArray(fresh)?fresh:[],clips);}
+          catch(error){setGenerating(false);notify(error instanceof Error?error.message:'字幕更新失败，原字幕已保留','error');return;}
           pushHistory();
           setCaptions(merged);
           setGenerating(false);
-          notify(added.length ? `Captions ready (+${added.length})` : 'Captions up to date', 'ok');
+          const report=await fetch(`/proofread.json?_=${Date.now()}`).then(r=>r.ok?r.json():null).catch(()=>null);
+          const pending=Array.isArray(report?.review)?report.review.length:null;
+          notify(`字幕已重新生成（${merged.length}条）${pending===null?'':`，校对待复核${pending}项`}，可撤销恢复原字幕。`, 'ok');
         },
         (msg) => { setGenerating(false); notify('Captions failed: ' + msg, 'error'); },
       );
@@ -317,7 +344,10 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   };
 
   // Auto-trim leading/trailing silence on every clip (uses cached transcripts).
+  const [pauseReview,setPauseReview]=useState<{clips:typeof clips;plan:AutocutPlan;signature:string}|null>(null);
   const trimSilence = async () => {
+    const signature=JSON.stringify({projectId:useEditor.getState().projectId,clips});
+    playerRef.current?.pause();
     setTrimming(true);
     setTrimLabel('Starting…');
     try {
@@ -327,10 +357,10 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
         (s) => setTrimLabel(`${s.label ?? ''} ${s.progress ?? 0}%`),
         async () => {
           const {plan} = await fetch(`/trim-silence.json?_=${Date.now()}`).then((x) => x.json()).catch(() => ({plan: null}));
-          if (Array.isArray(plan) && plan.length) applyAutocut(plan);
+          if (Array.isArray(plan) && plan.length) setPauseReview({clips,plan,signature});
           setTrimming(false);
           const cuts = Array.isArray(plan) ? plan.reduce((n, p) => n + (p.segments?.length ?? 0), 0) : 0;
-          notify(Array.isArray(plan) && plan.length ? `Autocut — ${plan.length} clip(s) → ${cuts} segment(s)` : 'Nothing to cut', 'ok');
+          notify(Array.isArray(plan) && plan.length ? `停顿分析完成：${cuts} 段保留范围，请核对后应用` : 'Nothing to cut', 'ok');
         },
         (msg) => { setTrimming(false); notify('Autocut failed: ' + msg, 'error'); },
       );
@@ -403,7 +433,9 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
     const cy = r.top + r.height / 2;
     const startDist = Math.hypot(e.clientX - cx, e.clientY - cy) || 1;
     const ctx = isClip ? clipKfCtx(id) : null;
-    const startScale = isClip ? ctx?.cur.scale ?? 1 : (kind === 'cap' ? captions.find((c) => c.id === id) : brolls.find((b) => b.id === id))?.scale ?? 1;
+    const selectedCaption=captions.find(c=>c.id===id);
+    const styledScale=selectedCaption&&(presentation.captionStyle||selectedCaption.styleOverride)?(selectedCaption.styleOverride?.fontSize??presentation.captionStyle?.fontSize??62)/(presentation.captionStyle?.fontSize??62):undefined;
+    const startScale = kind==='cap'&&styledScale!==undefined?styledScale:isClip ? ctx?.cur.scale ?? 1 : (kind === 'cap' ? captions.find((c) => c.id === id) : brolls.find((b) => b.id === id))?.scale ?? 1;
     let snapped = false; // push history once, only when the drag actually moves
     const move = (ev: PointerEvent) => {
       if (!snapped && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 2) { pushHistory(); snapped = true; }
@@ -473,12 +505,12 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
       const cap = captions.find((c) => c.id === hit.id);
       if (!cap) return;
       const startY = e.clientY;
-      const startTop = cap.topPct;
+      const startTop = cap.styleOverride?.topPct??presentation.captionStyle?.topPct??cap.topPct;
       let snapped = false;
       const move = (ev: PointerEvent) => {
         const dPct = ((ev.clientY - startY) / rect.height) * 100;
         if (Math.abs(ev.clientY - startY) > 3 && !snapped) { pushHistory(); snapped = true; }
-        setTopPct(hit.id, Math.min(88, Math.max(5, startTop + dPct)));
+        setTopPct(hit.id, Math.min(92, Math.max(5, startTop + dPct)));
       };
       const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
       window.addEventListener('pointermove', move);
@@ -566,9 +598,14 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
             <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${trimming ? 'animate-spin' : ''}`}>{trimming ? 'progress_activity' : 'content_cut'}</span>
             {trimming ? (trimLabel || 'Cutting…') : '剪去停顿'}
           </button>
+          <button type="button" onClick={()=>{playerRef.current?.pause();setRetakeOpen(true);}} disabled={!clips.length||exp?.status==='running'||generating||arranging||trimming} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">口播精剪</button>
+          <button type="button" onClick={()=>{playerRef.current?.pause();setMotionLibraryOpen(true);}} disabled={exp?.status==='running'} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">动效库</button>
           {exp?.status === 'running' && <span aria-hidden="true" className="text-body-sm text-on-surface-variant">Rendering… {exp.progress ?? 0}%</span>}
           {exp?.status === 'done' && exp.file && <a href={exp.file} download className="text-body-sm text-[#39d98a]">↓ 下载 MP4</a>}
           {exp?.status === 'error' && <span className="text-body-sm text-error">Render error</span>}
+          <button type="button" onClick={checkEdit} disabled={!clips.length} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md disabled:opacity-40">
+            检查成片
+          </button>
           <button
             type="button"
             onClick={() => exportVideo(true)}
@@ -578,6 +615,9 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
           >
             导出预览
           </button>
+          <label className="text-body-sm">导出倍速 <select aria-label="导出倍速" disabled={exp?.status === 'running'} value={exportRate} onChange={e=>setExportRate(Number(e.target.value))} className="bg-surface-container-lowest rounded px-2 py-1" title="画面、字幕、动效与声音同步变速，保持音高；不受预览静音影响">
+            {PREVIEW_RATES.map(rate=><option key={rate} value={rate}>{rate}×</option>)}
+          </select></label>
           <button type="button" onClick={() => exportVideo(false)} disabled={exp?.status === 'running' || !clips.length} className="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-lg font-bold text-body-md hover:brightness-110 active:scale-95 disabled:opacity-40 transition-all">
             导出 MP4
           </button>
@@ -586,9 +626,30 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
 
       <div className="studio-help"><button className="asset-toggle" onClick={()=>setAssetsOpen(v=>!v)}>▦ 素材库</button><button onClick={()=>setPresentationOpen(true)}>▣ 知识讲解模板</button><button onClick={()=>setMotionOpen(true)}>✦ 内容动效 / 导入字幕</button><button onClick={()=>setSettingsOpen(true)}>⚙ 服务配置</button><span>先识别字幕 → 保护语音粗剪 → 编排动效 → 导出 · 本机自动保存</span></div>
       <ScreenCapture/>
+      {audit && <details className="px-4 py-2 border-b border-outline-variant text-body-sm" open>
+        <summary>成片检查：{audit.length ? `${audit.length} 处待复核` : '暂未发现时间空窗或重复句等提示'}</summary>
+        <p className="mt-2 text-on-surface-variant">请播放确认原话、字幕和画面节奏。提示不会自动修改或阻止导出；修改后请重新检查。</p>
+        <div className="max-h-32 overflow-y-auto">{audit.map((item, index) => <button type="button" key={`${item.kind}-${index}`} className="block text-left py-1 underline" onClick={() => {
+          const frame = Math.max(0, Math.round(item.startSec * (meta?.fps ?? 30)));
+          playerRef.current?.seekTo(frame);setCurrentFrame(frame);
+        }}>{fmt(item.startSec)}—{fmt(item.endSec)} · {item.message}</button>)}</div>
+        <button type="button" className="mt-2 underline" onClick={() => setAudit(null)}>收起检查结果</button>
+      </details>}
       {presentationOpen&&<PresentationTools onClose={()=>setPresentationOpen(false)} seek={f=>{playerRef.current?.seekTo(f);setCurrentFrame(f);}}/>}
       {motionOpen&&<MotionTools onClose={()=>setMotionOpen(false)} seek={f=>{playerRef.current?.seekTo(f);setCurrentFrame(f);}}/>}
       {settingsOpen&&<Settings onClose={()=>setSettingsOpen(false)}/>}
+      {motionLibraryOpen&&<MotionLibrary onClose={()=>setMotionLibraryOpen(false)}/>}
+      {pauseReview&&<PauseReviewDialog clips={pauseReview.clips} plan={pauseReview.plan} onPause={()=>playerRef.current?.pause()} onClose={()=>setPauseReview(null)} onApply={plan=>{
+        const now=useEditor.getState();
+        if(JSON.stringify({projectId:now.projectId,clips:now.clips})!==pauseReview.signature)throw Error('分析后时间线已改变，请关闭并重新分析。');
+        applyAutocut(plan);setPauseReview(null);notify('已应用所选停顿剪口，可一次撤销恢复。','ok');
+      }}/>}
+      {retakeOpen&&<RetakeDialog key={projectId??'unsaved'} clips={clips} onClose={()=>setRetakeOpen(false)} onPausePreview={()=>playerRef.current?.pause()} onApply={(analysis,options)=>applyRetakePlanToStore(useEditor,analysis,options)} onSeekSource={(retainedIds,sourceSec)=>{
+        const state=useEditor.getState(),target=retakeSourceFrame(state.clips,retainedIds,sourceSec,state.meta?.fps??30);
+        if(!target){notify('这一原片实例已不在当前时间线，可试听素材原声。','error');return;}
+        playerRef.current?.pause();playerRef.current?.seekTo(target.frame);state.setCurrentFrame(target.frame);
+        if(!target.exact)notify('该前版本已删除，已定位到最近保留剪口；仍可试听原片。','ok');
+      }}/>}
       {/* Auto-arrange duplicate-removal suggestion (non-destructive until confirmed) */}
       {dupSuggestion.length > 0 && (
         <div role="region" aria-label="Duplicate takes suggestion" className="flex items-center justify-between gap-3 px-4 py-2 bg-primary-container/20 border-b border-primary/30 text-body-md shrink-0">
@@ -623,6 +684,9 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
                 durationInFrames={meta.durationInFrames}
                 fps={meta.fps}
                 playbackRate={previewRate}
+                initiallyMuted
+                controls={previewFullscreen}
+                alwaysShowControls={previewFullscreen}
                 compositionWidth={meta.width}
                 compositionHeight={meta.height}
                 style={{width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(70,69,84,0.3)'}}
@@ -680,6 +744,10 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
               <IconButton icon="skip_next" size={24} label="下一片段" onClick={() => skip(1)} className="text-on-surface-variant hover:text-primary transition-colors" />
             </div>
             <div className="flex items-center gap-2">
+              <button type="button" aria-label={previewMuted ? '试听原声（仅预览）' : '预览静音'} aria-pressed={!previewMuted} title="只影响播放器试听，不改变片段音量或导出声音" onClick={() => {const p=playerRef.current;if(p){if(p.isMuted())p.unmute();else p.mute();}}} className="flex items-center gap-1 text-[11px] text-on-surface-variant whitespace-nowrap hover:text-primary">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{previewMuted ? 'volume_off' : 'volume_up'}</span>
+                {previewMuted ? '试听原声' : '预览静音'}
+              </button>
               <label className="flex items-center gap-1 text-[11px] text-on-surface-variant whitespace-nowrap">预览倍速
                 <select aria-label="预览倍速" className="bg-surface-container-lowest text-on-surface rounded px-1 py-1" value={previewRate} onChange={e=>{const rate=Number(e.target.value);if(PREVIEW_RATES.includes(rate))setPreviewRate(rate);}}>
                   {PREVIEW_RATES.map(rate=><option key={rate} value={rate}>{rate}×</option>)}

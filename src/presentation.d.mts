@@ -1,7 +1,7 @@
 import type {Caption} from './captions';import type {Clip} from './timeline';
 export type Chapter={id:string;clipId:string;src?:string;startMs:number;title:string};
 export type SourceCanvas={width:number;height:number};
-export type Presentation={emphasisTheme?:import('./emphasis-theme.mjs').EmphasisTheme;displayFont?:import('./display-fonts.mjs').DisplayFontId;theme:'classic'|'knowledge';format:'portrait'|'landscape'|'source';canvas?:SourceCanvas;title?:string;scenes?:import('./storyboard.mjs').StoryScene[];speaker?:{x?:number;y?:number;scale?:number};style?:'clean'|'reference';motionPace?:'calm'|'balanced'|'brisk';chapters:Chapter[]};
+export type Presentation={windowAssetTags?:Record<string,string[]>;talkingMotion?:import('./talking-motion.mjs').TalkingCue[];captionStyle?:Partial<import('./caption-style.mjs').CaptionStyle>;emphasisTheme?:import('./emphasis-theme.mjs').EmphasisTheme;displayFont?:import('./display-fonts.mjs').DisplayFontId;theme:'classic'|'knowledge';format:'portrait'|'landscape'|'source';canvas?:SourceCanvas;title?:string;scenes?:import('./storyboard.mjs').StoryScene[];speaker?:{x?:number;y?:number;scale?:number};style?:'clean'|'reference';motionPace?:'calm'|'balanced'|'brisk';chapters:Chapter[]};
 export function validSourceCanvas(canvas:unknown):canvas is SourceCanvas;
 export function sourceCanvasForClip(clip?:Clip):SourceCanvas|null;
 export function presentationSize(p?:Presentation):{width:number;height:number};

@@ -1,0 +1,16 @@
+import type {StoryScene} from './storyboard.mjs';
+import type {StageRect} from './dynamic-mechanisms.mjs';
+import type {VisibleTextClock} from './dynamic-text-clock.mjs';
+import type {TextFit} from './text-fit.mjs';
+export const MAX_FUNNEL_DOTS:number;
+export type FunnelFlowConfig={kind:'quantified-funnel-flow';dataKind:'explicit'|'illustration';provenance:string;totalCount:number;passedCount:number;unitPerDot:number;unit:string;atMs:number;emitMs:number;inletMs:number;passMs:number;settleMs:number;collectMs?:number;side?:'left'|'right';panelRect?:StageRect;copyWindow?:{atMs:number;durationMs:number};annotation?:string;inputLabel?:string;passedLabel?:string;rejectedLabel?:string};
+export type FunnelToken={id:string;index:number;birthMs:number;weight:number;passedWeight:number;rejectedWeight:number;passIndex:number|null;rejectIndex:number|null};
+export type FunnelParticle={id:string;tokenId:string;phase:'inlet'|'passing'|'settling'|'passed'|'settled';weight:number;x:number;y:number};
+export type FunnelGeometry={safe:StageRect;panel:StageRect;title:StageRect;counts:StageRect;body:StageRect;copy:StageRect;speaker:StageRect;copyText:string};
+export function funnelTokenPlan(config:Pick<FunnelFlowConfig,'totalCount'|'passedCount'|'unitPerDot'|'atMs'|'emitMs'>):FunnelToken[];
+export function funnelFlowGeometry(scene:StoryScene,config:FunnelFlowConfig,elapsed?:number,viewport?:{width:number;height:number}):FunnelGeometry;
+export function funnelFlowIssues(scene:StoryScene,config:FunnelFlowConfig,viewport?:{width:number;height:number}):string[];
+export type FunnelFlowState={available:boolean;issues:string[];geometry:FunnelGeometry;copyClock:VisibleTextClock;flowClock:VisibleTextClock;duration:number;automaticAllowed:false;requiresFaceReview:true;transport:'illustrated-from-explicit-counts';coordinateSpace:'body-normalized';disclosure:string;particles:FunnelParticle[];tokens:FunnelToken[];counts:{emitted:number;passed:number;rejected:number;inFlight:number;notEmitted:number};phase:'unavailable'|'before'|'copy'|'emitting'|'draining'|'complete';completedAtMs:number|null;rate:number|null;rateVisible:boolean;dotRadiusPx:number};
+export function funnelFlowState(scene:StoryScene,config:FunnelFlowConfig,elapsed:number,viewport?:{width:number;height:number}):FunnelFlowState;
+export function funnelTextReadiness(text:string,fit:TextFit|null,clock:VisibleTextClock,exposure?:{speed?:number;startMs?:number;endMs?:number}):{ready:boolean;issues:string[]};
+export function funnelTextPage(pages:string[][],clock:VisibleTextClock):number;

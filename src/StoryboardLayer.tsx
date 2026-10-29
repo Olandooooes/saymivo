@@ -1,4 +1,5 @@
 import {EditorialCriteria} from './EditorialCriteria';
+import {VisualPresetScene} from './VisualPresetScene';
 import {emphasisGeometry,emphasisLineGeometry} from './emphasis-layout.mjs';
 import {displayFont} from './DisplayFont';
 import {lectureTransition,closingTextTransition} from './lecture-transition.mjs';
@@ -18,6 +19,8 @@ const font='PingFang SC, Microsoft YaHei, sans-serif';
 function SceneVisual({scene,ms,plane,settledPanel=false,contentOpacity=1,surface=true,panelPose}:{scene:StoryScene;ms:number;plane:string;settledPanel?:boolean;contentOpacity?:number;surface?:boolean;panelPose?:StoryScene['containerPose']}){
  const {width:w,height:h,fps}=useVideoConfig();const wide=w>h;const blurId='chapter-'+React.useId().replace(/:/g,'');
  const elapsed=(ms-(scene.phaseStartMs??scene.startMs))*(scene.speed??1),p=scene.transitionMs===0?1:easeOut(elapsed/(scene.transitionMs??200));
+ if(scene.dynamicMotion)return null;
+ if(scene.visualPreset)return plane==='foreground'&&scene.visualPreset.id!=='person-backdrop'?<VisualPresetScene scene={scene} elapsed={elapsed}/>:null;
  if(scene.layout==='speaker'||scene.titleTreatment==='embedded')return null;
  const foreground=['headline','chapter','outro'].includes(scene.layout);
  if((plane==='foreground')!==foreground)return null;
@@ -77,13 +80,14 @@ function SceneTags({scene,ms}:{scene:StoryScene;ms:number}){
   return <div key={t.id} data-scene-tag={t.id} style={{position:'absolute',left:t.x*width,top:t.y*height,maxWidth:width*.48,boxSizing:'border-box',padding:'14px 26px',borderRadius:18,background:context.enabled?`color-mix(in srgb, #464950dc ${context.fillOpacity*100}%, transparent)`:'#464950dc',border:context.enabled?`1px solid color-mix(in srgb, #ffffff44 ${context.fillOpacity*100}%, transparent)`:'1px solid #ffffff44',color:'var(--koubo-emphasis-on-dark, #efff24)',fontSize:Math.min(width,height)*.043*(t.scale??1),fontWeight:850,lineHeight:1.35,overflowWrap:'anywhere',boxShadow:context.enabled?`0 9px 22px color-mix(in srgb, #0005 ${context.fillOpacity*100}%, transparent)`:'0 9px 22px #0005',opacity:p,transform:`translateY(${(1-p)*20}px) rotate(${t.rotate??0}deg)`}}>{context.enabled?<span style={{position:'relative',display:'block'}}>{contextText(t.text)}</span>:t.text}</div>;
  })}</AbsoluteFill>;
 }
+export {SceneTags};
 export function StoryboardLayer({scenes,plane='background'}:{scenes:StoryScene[];plane?:string}){
  const {fps}=useVideoConfig(),frame=useCurrentFrame(),ms=frame/fps*1000;
  const scene=scenes.filter(s=>{const r=storyboardFrameRange(s,fps);return frame>=r.from&&frame<r.from+r.durationInFrames;}).at(-1);if(!scene)return null;
  const range=storyboardFrameRange(scene,fps);
  const previous=previousStoryboardScene(scenes,scene);
  const transition=(scene.transitionMs??200)/(scene.speed??1),progress=transition?easeOut((ms-scene.startMs)/transition):1;
- const cross=previous&&previous.sourceId!==scene.sourceId&&Math.abs(previous.endMs-scene.startMs)<40&&(scene.sourceOffsetMs??0)<(scene.transitionMs??200)&&progress<1;
+ const cross=previous&&!scene.dynamicMotion&&!previous.dynamicMotion&&previous.sourceId!==scene.sourceId&&Math.abs(previous.endMs-scene.startMs)<40&&(scene.sourceOffsetMs??0)<(scene.transitionMs??200)&&progress<1;
  // A shared opaque page avoids both moving cut edges and transparent text ghosts.
  const isPanel=(s:StoryScene)=>!['speaker','headline','chapter','outro'].includes(s.layout);
  const panelSwap=Boolean(cross&&previous&&isPanel(previous)&&isPanel(scene)&&plane==='background');
@@ -91,6 +95,6 @@ export function StoryboardLayer({scenes,plane='background'}:{scenes:StoryScene[]
  const closingSwap=Boolean(cross&&closing.separate);
  const swap=lectureTransition(transition?(ms-scene.startMs)/transition:1,previous?.containerPose,scene.containerPose);
  const oldLayer=cross&&<Sequence key={'previous-'+previous.id} from={storyboardFrameRange(previous,fps).from} durationInFrames={storyboardFrameRange({...previous,endMs:scene.startMs+transition},fps).durationInFrames}><div style={{position:'absolute',inset:0,opacity:panelSwap?swap.outgoing:closingSwap?closing.outgoing:plane==='foreground'||scene.layout==='outro'?1-progress:1}}><Freeze frame={storyboardFrameRange(previous,fps).durationInFrames-1}><SceneVisual scene={previous} ms={previous.endMs-.01} plane={plane} settledPanel={panelSwap} surface={!panelSwap} panelPose={panelSwap?swap.pose:undefined}/></Freeze></div></Sequence>;
- const currentLayer=<Sequence key={'current-'+scene.id} from={range.from} durationInFrames={range.durationInFrames} premountFor={fps}><div style={{position:'absolute',inset:0,opacity:closingSwap&&plane==='foreground'?closing.incoming:1}}><SceneVisual scene={scene} ms={ms} plane={plane} settledPanel={panelSwap} contentOpacity={panelSwap?swap.incoming:1} panelPose={panelSwap?swap.pose:undefined}/>{plane==='foreground'&&<SceneTags scene={scene} ms={ms}/>}</div></Sequence>;
+ const currentLayer=<Sequence key={'current-'+scene.id} from={range.from} durationInFrames={range.durationInFrames} premountFor={fps}><div style={{position:'absolute',inset:0,opacity:closingSwap&&plane==='foreground'?closing.incoming:1}}><SceneVisual scene={scene} ms={ms} plane={plane} settledPanel={panelSwap} contentOpacity={panelSwap?swap.incoming:1} panelPose={panelSwap?swap.pose:undefined}/>{plane==='foreground'&&!scene.visualPreset&&!scene.dynamicMotion&&<SceneTags scene={scene} ms={ms}/>}</div></Sequence>;
  return panelSwap?<>{currentLayer}{oldLayer}</>:<>{oldLayer}{currentLayer}</>;
 }

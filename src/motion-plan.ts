@@ -10,7 +10,9 @@ export function parseSrt(srt:string,clips:Clip[],fps=30):Caption[]{
  for(const block of srt.replace(/^\uFEFF/,'').replace(/\r/g,'').split(/\n\s*\n/)){
  const lines=block.trim().split('\n'),idx=lines.findIndex(l=>l.includes('-->'));if(idx<0)continue;
  const pair=lines[idx].split('-->'),a=time(pair[0]),b=time(pair[1]),text=lines.slice(idx+1).join('').replace(/<[^>]+>/g,'').trim();if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a||!text)continue;
- let offset=0;for(const clip of clips){const speed=clip.speed??1,dur=Math.max(1,Math.round(((clip.outSec-clip.inSec)/speed)*fps))/fps*1000;const start=Math.max(a,offset),end=Math.min(b,offset+dur);if(end>start){const startMs=clip.inSec*1000+(start-offset)*speed,endMs=clip.inSec*1000+(end-offset)*speed;const tokens=text.match(/[\u3400-\u9fff]|[a-zA-Z0-9]+|[^\s]/g)??[text];out.push({id:`srt-${Date.now()}-${count++}`,clipId:clip.id,startMs,endMs,topPct:80,words:tokens.map((text,i)=>({text,startMs:startMs+(endMs-startMs)*i/tokens.length,endMs:startMs+(endMs-startMs)*(i+1)/tokens.length,accent:false}))});}offset+=dur;}
+ // SRT milliseconds may round just past a clip's frame boundary; only create
+ // fragments with a visible frame. Keep authored spaces on the following token.
+ let offset=0;for(const clip of clips){const speed=clip.speed??1,dur=Math.max(1,Math.round(((clip.outSec-clip.inSec)/speed)*fps))/fps*1000;const start=Math.max(a,offset),end=Math.min(b,offset+dur);if(Math.round(end*fps/1000)>Math.round(start*fps/1000)){const startMs=clip.inSec*1000+(start-offset)*speed,endMs=clip.inSec*1000+(end-offset)*speed;const tokens=text.match(/\s*(?:[\u3400-\u9fff]|[a-zA-Z0-9]+|[^\s])/g)??[text];out.push({id:`srt-${Date.now()}-${count++}`,clipId:clip.id,startMs,endMs,topPct:80,words:tokens.map((text,i)=>({text,startMs:startMs+(endMs-startMs)*i/tokens.length,endMs:startMs+(endMs-startMs)*(i+1)/tokens.length,accent:false}))});}offset+=dur;}
  }
  return out;
 }

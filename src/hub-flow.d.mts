@@ -1,0 +1,12 @@
+import type {StoryScene} from './storyboard.mjs';
+import type {StageRect,HubBranchFlowConfig,GraphEdgeSpec} from './dynamic-mechanisms.mjs';
+import type {VisibleTextClock} from './dynamic-text-clock.mjs';
+export type Viewport={width:number;height:number};
+export type FlowPath={kind:'bezier'|'polyline';points:{x:number;y:number}[]};
+export function hubDefaultRects(scene:StoryScene,config:HubBranchFlowConfig,viewport?:Viewport):Map<string,StageRect>;
+export function sampleFlowPath(path:FlowPath,p:number,viewport?:Viewport):{x:number;y:number};
+export function flowPathD(path:FlowPath,width?:number,height?:number):string;
+export type HubFlowNode={node:NonNullable<StoryScene['nodes']>[number];rect:StageRect;measurementRect:StageRect;footerReserved:boolean;opacity:number;saturation:number;trendAngle:number|null;assetSrc?:string;textClock:VisibleTextClock;metric:null|{from:number;to:number;unit:string;scale:{min:number;max:number};value:number;fraction:number};quoteLines:{text:string;atMs:number;highlightText?:string;highlightAtMs?:number;opacity:number;highlighted:boolean;textClock:VisibleTextClock}[]};
+export type HubFlowEdge=GraphEdgeSpec&{opacity:number;birthAtMs:number;removedAtMs:number;path:FlowPath;draw:number;enabled:boolean;particles:{id:string;birthMs:number;progress:number;x:number;y:number;opacity:number}[]};
+export function hubFlowState(scene:StoryScene,config:HubBranchFlowConfig,elapsed:number,viewport?:Viewport):{nodes:HubFlowNode[];edges:HubFlowEdge[];diagramMix:number;speakerRect:StageRect|null;requiresRealCutout:boolean};
+export function hubFlowIssues(scene:StoryScene,config:HubBranchFlowConfig,viewport?:Viewport):string[];
