@@ -107,7 +107,7 @@ function parseWhisperxJson(file) {
         const next = raw.slice(i + 1).find((x) => x.start != null);
         end = next ? next.start : start + 0.3;
       }
-      return {word: String(w.word).trim(), startMs: Math.round(start * 1000), endMs: Math.round(end * 1000)};
+      return {word: String(w.word).trim(), spaceBefore: /^\s/.test(String(w.word)), startMs: Math.round(start * 1000), endMs: Math.round(end * 1000)};
     })
     .filter((w) => w.word.length > 0);
 }
@@ -238,6 +238,7 @@ export function assembleWords(clips, onProgress) {
       const e = Math.min(w.endMs, outMs) - inMs + offsetMs;
       out.push({
         word: w.word,
+        spaceBefore: w.spaceBefore,
         startMs: Math.round(s), // absolute timeline (current cut)
         endMs: Math.round(e),
         clipId: clip.id, // anchor

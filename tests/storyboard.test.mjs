@@ -7,9 +7,36 @@ test('visual scenes retain animation phase across a source split and speed chang
  assert.equal(p[1].startMs,2000);assert.equal(p[1].endMs,5000);assert.equal(p[1].phaseStartMs,-5000);assert.equal((p[1].startMs-p[1].phaseStartMs)*p[1].speed,7000);
  assert.equal(p[1].nodes[0].atMs,5000); // does not restart a revealed node
 });
-test('scenes do not attach to an unrelated clip with the same filename or a removed source',()=>{
- assert.equal(projectStoryboard([scene],[{id:'other',src:scene.src,inSec:0,outSec:20}]).length,0);
+test('scenes do not attach to a different source path with the same filename or a removed source',()=>{
+ assert.equal(projectStoryboard([scene],[{id:'other',src:'clips/other/raw.mp4',inSec:0,outSec:20}]).length,0);
+ assert.equal(projectStoryboard([scene],[{id:'raw',src:'clips/other/raw.mp4',inSec:0,outSec:20}]).length,0);
  assert.equal(activeStoryboard([scene],2000,{id:'raw-2',src:scene.src}),scene);assert.equal(activeStoryboard([scene],12000),undefined);
+});
+
+test('a scene created on the first retained clip reaches later sibling cuts of the same source',()=>{
+ const clips=[
+  {id:'raw-shead',src:scene.src,inSec:1.467,outSec:9.9,speed:1},
+  {id:'raw-slater',src:scene.src,inSec:38,outSec:44,speed:1},
+  {id:'raw-slater-snext',src:scene.src,inSec:46,outSec:50,speed:1.25},
+ ];
+ const authored={...scene,clipId:clips[0].id,startMs:38000,endMs:50000,
+  nodes:[{id:'first',text:'先分析',atMs:0},{id:'later',text:'再验证',atMs:7000}]};
+ const before=structuredClone({authored,clips}),parts=projectStoryboard([authored],clips,30);
+ assert.equal(parts.length,2);
+ assert.deepEqual(parts.map(p=>p.clipId),['raw-slater','raw-slater-snext']);
+ assert.equal(parts[0].startMs,253/30*1000);
+ assert.equal(parts[1].sourceOffsetMs,8000);
+ assert.equal(parts[1].speed,1.25);
+ assert.equal((parts[1].startMs-parts[1].phaseStartMs)*parts[1].speed,8000);
+ assert.deepEqual(validateStoryboard([authored],clips),[]);
+ assert.equal(activeStoryboard([authored],47000,clips[2]),authored);
+ assert.deepEqual({authored,clips},before);
+});
+
+test('a legacy scene without a source path keeps exact clip ownership',()=>{
+ const legacy={...scene,src:undefined};
+ assert.equal(projectStoryboard([legacy],[{id:'raw',src:'clips/legacy.mp4',inSec:0,outSec:20}]).length,1);
+ assert.equal(projectStoryboard([legacy],[{id:'raw-sibling',src:'clips/legacy.mp4',inSec:0,outSec:20}]).length,0);
 });
 test('validation exposes missing materials, invalid regions, duplicate IDs and detached scenes',()=>{
  const issues=validateStoryboard([{...scene,missing:'真实录屏',highlights:[{x:.8,y:.2,w:.5,h:.1}]},{...scene,endMs:1000}], [{id:'raw',src:scene.src,inSec:0,outSec:20}]);

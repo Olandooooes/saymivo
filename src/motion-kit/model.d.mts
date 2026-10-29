@@ -1,0 +1,18 @@
+export type KitId='emphasis-phrase'|'flip-board'|'source-token-transfer'|'screenshot-region-focus'|'evidence-handoff'|'orbit-flow-variant'|'field-roll-board'|'persistent-entities';
+export type KitConfig={version:1;id:KitId;title:string;accent:string;background:string;fontSize:number;enter:number;move:number;hold:number;gap:number;exit:number;[key:string]:any};
+export type KitField={key:string;label:string;type:string;min?:number;max?:number;step?:number;options?:string[]};
+export const KIT_VERSION:number;export const kitIds:KitId[];export const commonFields:KitField[];export const specificFields:Record<KitId,KitField[]>;
+export function defaultKitConfig(id:string):KitConfig;
+export function kitIssues(c:unknown):string[];
+export function kitTimeline(c:KitConfig):{start:number;enterEnd:number;motionEnd:number;exitAt:number;duration:number;cycle?:number;pages?:string[][][]};
+export function kitEnvelope(t:number,c:KitConfig):number;
+export function emphasisSample(c:KitConfig,t:number):{index:number;text:string;opacity:number;scale:number;tracking:number};
+export function fieldCells(from:string,to:string,t:number,start:number,c:KitConfig):{id:number;from:string;to:string;p:number}[];
+export function focusSample(c:KitConfig,t:number):number;
+export function evidenceSample(c:KitConfig,t:number,index:number):number;
+export function orbitSample(c:KitConfig,t:number,index:number):{gather:number;opening:number;flow:number;arrived:boolean};
+export function tokenRanges(source:string,tokens:string[]):{id:string;text:string;start:number;end:number}[];
+export function boardPages(c:KitConfig):string[][][];
+export function exportKitConfig(c:KitConfig):string;export function importKitConfig(text:string,id?:string):KitConfig;
+export function clone<T>(value:T):T;export function clamp(n:number,a?:number,b?:number):number;export function ease(t:number):number;export function progress(t:number,start:number,duration:number):number;export function lerp(a:number,b:number,p:number):number;export function mixRect(a:any,b:any,p:number):any;export function glyphs(text:string):string[];
+export function kitMarkers(c:KitConfig):number[];

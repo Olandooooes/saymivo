@@ -1,0 +1,13 @@
+import type {StoryScene} from './storyboard.mjs';
+import type {DynamicMechanismConfig,StageRect} from './dynamic-mechanisms.mjs';
+import type {TextFit} from './text-fit.mjs';
+import type {TextLayoutReport} from './MeasuredText';
+export type CompleteSourceCopyWindow={atMs:number;endMs:number;rect:StageRect;speakerRect?:StageRect};
+export function completeSourceCopyInventory(scene:StoryScene):{id:string;text:string}[];
+export function completeSourceCopyText(scene:StoryScene):string;
+export function updateNativeLayoutReports(previous:{signature:string;reports:TextLayoutReport[]},signature:string,value:TextLayoutReport):{signature:string;reports:TextLayoutReport[]};
+export function nativeCriticalEntry(scene:StoryScene,config:DynamicMechanismConfig):{atMs:number;overviewMs:number;events:{atMs:number;reason:string}[]};
+export function nativeLayoutPlan(scene:StoryScene,config:DynamicMechanismConfig,elapsed:number,viewport?:{width:number;height:number}):{count:number;phase:unknown};
+export function completeSourceCopySpeaker(scene:StoryScene,config:DynamicMechanismConfig,elapsed:number,viewport?:{width:number;height:number}):StageRect|null;
+export function completeSourceCopyIssues(scene:StoryScene,config:DynamicMechanismConfig,viewport?:{width:number;height:number}):string[];
+export function completeSourceCopyReadiness(scene:StoryScene,config:DynamicMechanismConfig,fit:TextFit|null,viewport?:{width:number;height:number}):{status:'blocked'|'waiting'|'ready';issues:string[]};

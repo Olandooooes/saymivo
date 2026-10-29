@@ -1,0 +1,24 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {talkingMotionSignature} from '../src/talking-motion.mjs';
+const data=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');
+const host=data('export const useCurrentFrame=()=>globalThis.__talkingFrame;export const useVideoConfig=()=>({fps:30,width:1920,height:1080});');
+const original=fs.readFileSync(new URL('../src/StoryboardLayer.tsx',import.meta.url),'utf8'),parsed=ts.createSourceFile('StoryboardLayer.tsx',original,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+const declaration=parsed.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='SceneTags');assert.ok(declaration);
+const tagCode=`import React from ${JSON.stringify(import.meta.resolve('react'))};import {useVideoConfig} from ${JSON.stringify(host)};import {emphasisGeometry,emphasisLineGeometry} from ${JSON.stringify(import.meta.resolve('../src/emphasis-layout.mjs'))};import {tagAnimationEnvelope,tagContextEnvelope,kineticWholeLineEnvelope} from ${JSON.stringify(import.meta.resolve('../src/tag-animation.mjs'))};const AbsoluteFill='div',font='body',displayFont='display';export ${declaration.getText(parsed)}`;
+const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText;
+const tags=data(compile(tagCode)),font=data('export const useDisplayFont=()=>{};');
+const file=new URL('../src/TalkingMotionLayer.tsx',import.meta.url);
+const code=compile(fs.readFileSync(file,'utf8')).replace(/from (["'])([^"']+)\1/g,(_,q,s)=>'from '+JSON.stringify(s==='remotion'?host:s==='./StoryboardLayer'?tags:s==='./DisplayFont'?font:s.startsWith('.')?new URL(s,file).href:import.meta.resolve(s)));
+const {TalkingMotionLayer}=await import(data(code));
+const clips=[{id:'c',src:'clips/synthetic.mp4',inSec:0,outSec:20,speed:1}],captions=[{clipId:'c',words:[{text:'第一检查原料。',startMs:1000,endMs:4000},{text:'第二保持密封。',startMs:5000,endMs:8000}]}];
+const cue={id:'test',clipId:'c',src:clips[0].src,kind:'steps',startMs:1000,endMs:8000,items:captions[0].words.map(w=>({text:w.text,atMs:w.startMs})),signature:talkingMotionSignature(captions,'c',1000,8000),topPct:10,scale:1,entryMs:220};
+const render=frame=>{globalThis.__talkingFrame=frame;return renderToStaticMarkup(React.createElement(TalkingMotionLayer,{cues:[cue],captions,clips}));};
+test('automatic layer executes the original blue SceneTags; later clauses are absent before speech',()=>{
+ assert.equal(render(0),'');const early=render(60);assert.match(early,/reference-blue-scene-tags/);assert.match(early,/#3156b9/);assert.match(early,/检查原料/);assert.doesNotMatch(early,/保持密封/);assert.doesNotMatch(early,/rgba\(13,20,26/);
+ const later=render(180);assert.match(later,/保持密封/);assert.match(later,/WebkitTextStroke|webkit-text-stroke/);assert.equal(render(240),'');delete globalThis.__talkingFrame;
+});

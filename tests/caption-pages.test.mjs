@@ -79,3 +79,30 @@ test('a source-timed ordinal retains its own cue after its pause shrinks below t
  const words=[{text:'第一',startMs:74440,endMs:75000},{text:'他能不能把任务真正做完',startMs:75170,endMs:77670}];
  assert.deepEqual(readableCaptionWordGroups(words),words.map(w=>[w]));assert.deepEqual(readableCaptionWordGroups([{text:'第二',startMs:0,endMs:200},{text:'天',startMs:200,endMs:400}]).flat(),[{text:'第二',startMs:0,endMs:200},{text:'天',startMs:200,endMs:400}]);
 });
+
+test('Latin names cannot be cut at terminal fallback or narrow widths',async()=>{
+ const {readableCaptionWordGroups}=await import('../src/caption-pages.mjs');
+ for(const term of ['Agent','REA','ChatGPT','OpenAI','Notion','UnknownProduct42'])for(const maxWidth of [1,3,5,15]){
+  const words=[...('介绍'+term+'的功能')].map((text,i)=>({text,startMs:i*80,endMs:(i+1)*80}));
+  const groups=readableCaptionWordGroups(words,{maxWidth});
+  assert.deepEqual(groups.flat(),words);
+  assert.ok(groups.some(g=>g.map(w=>w.text).join('').includes(term)),term+' '+maxWidth);
+ }
+});
+test('confirmed names with recognizer-inserted spaces stay on the same page',async()=>{
+ const {readableCaptionWordGroups}=await import('../src/caption-pages.mjs');
+ for(const name of ['Chat GPT','A g e n t','Open AI']){
+  const words=[...'介绍'+name+'的功能'].map((text,i)=>({text,startMs:i*50,endMs:(i+1)*50}));
+  assert.ok(readableCaptionWordGroups(words,{maxWidth:3}).some(g=>g.map(w=>w.text).join('').includes(name)));
+ }
+});
+test('common verbs stay whole, conjunctions introduce a clause and short complements do not become orphan pages',async()=>{
+ const {readableCaptionWordGroups}=await import('../src/caption-pages.mjs');
+ for(const text of ['上一段讲了AI Agent可以调用工具一步步完成任务而它还有其他能力','它把Agent接到专门的分析工具上,','先说它是怎么工作的平时我们让AI做一个类似的软件']){
+  const words=[...text].map((text,i)=>({text,startMs:i*100,endMs:i*100+100}));
+  const groups=readableCaptionWordGroups(words),strings=groups.map(g=>g.map(w=>w.text).join(''));
+  assert.deepEqual(groups.flat(),words);assert.ok(!strings.some(s=>/调$|但$|而$|平时$/.test(s)));assert.ok(!strings.some(s=>/^上[,，]?$/.test(s)));
+ }
+ const words=[...'但它到底能做到哪一步我看完项目介绍觉得值得聊'].map((text,i)=>({text,startMs:i*100,endMs:i*100+100}));
+ assert.ok(!readableCaptionWordGroups(words).some(g=>g.map(w=>w.text).join('')==='但'));
+});

@@ -1,0 +1,10 @@
+import type {StoryScene} from './storyboard.mjs';import type {Presentation} from './presentation.mjs';
+export type VisualPresetId='type-relay'|'clear-type'|'person-backdrop'|'floating-evidence'|'fine-process'|'orbit-evidence'|'grouped-evidence';
+export type VisualPreset={id:VisualPresetId;version:1;name:string;intent:string;description:string;speaker:'speaker'|'slide';requires:string[];provenance:null|{creator:string;url:string;publishedAt:string;verifiedAt:string;timeRange:string}};
+export const visualPresets:VisualPreset[];
+export function visualPreset(id?:string):VisualPreset|undefined;
+export function visualPresetIssues(scene:StoryScene,id:string):string[];
+export function applyVisualPreset(presentation:Presentation,sceneId:string,id:VisualPresetId|null,options?:{side?:'left'|'right';primaryNodeIds?:string[]}):{ok:true;presentation:Presentation}|{ok:false;error:string};
+export function visualContentRect(scene:StoryScene,width:number,height:number):{x:number;y:number;width:number;height:number;side:string};
+export function suggestVisualPresets(scene:StoryScene):Array<{id:VisualPresetId;score:number;reason:string;issues:string[]}>;
+export function visualSequence(scene:StoryScene,elapsed:number):{nodes:NonNullable<StoryScene['nodes']>;starts:number[];index:number;current:NonNullable<StoryScene['nodes']>[number];from:number;to:number;duration:number};

@@ -1,0 +1,24 @@
+export type MotionPresetCatalogId='type-relay'|'clear-type'|'person-backdrop'|'floating-evidence'|'fine-process'|'orbit-evidence'|'grouped-evidence';
+export type MotionReferenceSource={episode:number;creator:string;videoId:string;url:string;publishedAt:string;datePrecision:'verified-relative-day'|'verified-minute';durationSec:number;research:{firstPassGroupsReviewed:number;firstPassSamplesReviewed:number;keySlowGroupsReviewed:number;keySlowSamplesReviewed:number;keySlowReviewed:boolean;sourceFrameComplete:false;audioVerified:false;pending:string[]}};
+export type MotionPhaseObservation={description:string|null;confidence:'not-observed'|'sample-supported'|'continuously-observed'|'frame-reviewed';method:string};
+export type MotionReferenceEntry={
+  id:string;name:string;reusableClassId:string;source:MotionReferenceSource;
+  sourceFamilyId:string;
+  observation:{range:{startSec:number;endSec:number;kind:'sample-span'|'disjoint-sample-ranges';exactStartSec:number|null;exactEndSec:number|null};rangesSec:number[][];sampleTimesSec:number[];evidenceKeys:string[];accuracyNote:string;method:string;confidence:string;capturedSamplesReviewed:boolean;completeDynamicReview:boolean};
+  mechanism:string;spokenSemantics:string[];elements:string[];layers:string[];
+  phases:Record<'entry'|'movement'|'transformation'|'occlusion'|'hold'|'exit',MotionPhaseObservation>;
+  narration:{trigger:string|null;basis:'visible-subtitle'|'unknown';audioVerified:boolean};
+  slowReplayNotes:string[];
+  implementation:{status:'implemented'|'partial'|'unimplemented';presetIds:MotionPresetCatalogId[];entryIds:string[];preparedIds:string[];stage:'experimental-config'|'base-preset'|'source-material-required'|'unimplemented';uiAccepted:false;referenceEquivalent:false;implementedPart:string|null;missingParts:string[];acceptance:string};
+  alternatives:Array<{presetId:MotionPresetCatalogId;relation:'partial-substitute'|'related-only';limitation:string}>;
+  limits:string[];
+};
+export const motionReferenceCatalogVersion:number;
+export const motionReferenceCoverage:{status:string;label:string;complete:boolean;exhaustive:boolean;window:string[];selection:string;method:string;limitations:string[]};
+export const motionReferenceSources:MotionReferenceSource[];
+export const motionReferenceGroups:{id:string;name:string}[];
+export const localMotionPresetCoverage:Array<{id:MotionPresetCatalogId;name:string;available:boolean;referenceEquivalent:boolean;note:string}>;
+export const motionReferenceCatalog:MotionReferenceEntry[];
+export const motionReferenceCatalogEntry:(id:string)=>MotionReferenceEntry|undefined;
+export function motionReferenceImplementationState(entry:MotionReferenceEntry,registeredEntryIds:readonly string[]):{entryIds:string[];unregisteredIds:string[];label:string;uiAccepted:false;referenceEquivalent:false};
+export const motionReferenceObservationTemplate:{sourceVideoId:string;startSec:number|null;endSec:number|null;exactBoundariesVerified:boolean;elements:string[];layers:string[];entry:string|null;movement:string|null;transformation:string|null;occlusion:string|null;narrationTrigger:string|null;hold:string|null;exit:string|null;reusableClassId:string|null;observationMethod:string;confidence:string;sourceClockEvidence:unknown[];bufferingOrMissing:unknown[];implementationStatus:string};

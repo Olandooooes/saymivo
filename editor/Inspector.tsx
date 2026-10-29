@@ -1,3 +1,7 @@
+import {ImageWindowPanel} from './ImageWindowPanel';
+import {TalkingMotionPanel} from './TalkingMotionPanel';
+import {reflowCaptionPages} from '../src/build-caption-pages.mjs';
+import {CaptionStylePanel} from './CaptionStylePanel';
 import {CaptionReviewSave} from './CaptionReviewSave';
 import {CaptionTimingEditor} from './CaptionTimingEditor';
 import {ClipFocusTools} from './ClipFocusTools';
@@ -11,8 +15,8 @@ import {SourceAudition} from './SourceAudition';
 import {projectBrolls} from '../src/Broll';
 import {IconButton} from './IconButton';
 
-type Tab = '字幕' | '补充画面' | '样式' | '音乐';
-const TABS: Tab[] = ['字幕', '补充画面', '样式', '音乐'];
+type Tab = '字幕' | '补充画面' | '样式' | '动效' | '音乐';
+const TABS: Tab[] = ['字幕', '补充画面', '样式', '动效', '音乐'];
 const tabId = (t: Tab) => `inspector-tab-${TABS.indexOf(t)}`;
 
 const ACCENT_SWATCHES = ['#d8f99a', '#FFB020', '#c2c1ff', '#ffb785', '#adc6ff', '#39d98a', '#ff6b8b'];
@@ -29,11 +33,13 @@ export const Inspector: React.FC<{
 }> = ({playerRef, onGenerate, generating, progressLabel, onGenerateBroll, brollGenerating, brollLabel}) => {
   const {
     meta, captions, clips, music, brolls, accentColor, selectedId, selectedClipId, presentation, setPresentation,
-    select, selectClip, setText, setTopPct, setCaptionHold, toggleAccent, pushHistory,
+    select, selectClip, setText, setTopPct, setAllCaptionTopPct, setCaptionHold, toggleAccent, pushHistory,
     deleteClip, moveClip, setMusic, setAccentColor, setBrollMode, swapBroll, removeBroll,
     setClipVolume, toggleClipMute, setClipSpeed,
   } = useEditor();
   const [tab, setTab] = useState<Tab>('字幕');
+  const [allCaptionTop, setAllCaptionTop] = useState('');
+  const [reflowMessage,setReflowMessage]=useState('');
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   if (!meta) return null;
 
@@ -57,6 +63,9 @@ export const Inspector: React.FC<{
   const projBrolls = projectBrolls(brolls, clips, meta.fps);
   const selClip = clips.find((c) => c.id === selectedClipId);
   const seekMs = (ms: number) => playerRef.current?.seekTo(Math.round((ms / 1000) * meta.fps));
+  const allCaptionTopValue = allCaptionTop.trim() === '' ? NaN : Number(allCaptionTop);
+  const canApplyCaptionTop = Number.isFinite(allCaptionTopValue) && allCaptionTopValue >= 5 && allCaptionTopValue <= 92
+    && captions.some(c => c.topPct !== allCaptionTopValue);
 
   return (
     <aside aria-label="属性与字幕" className="w-80 bg-surface-container-high border-l border-outline-variant flex flex-col h-full shrink-0">
@@ -96,10 +105,29 @@ export const Inspector: React.FC<{
               className="w-full py-3 bg-primary-container text-on-primary-container rounded-lg font-bold text-body-md hover:brightness-110 disabled:opacity-40 transition-all flex items-center justify-center gap-2"
             >
               <span aria-hidden="true" className={`material-symbols-outlined text-[20px] ${generating ? 'animate-spin' : ''}`}>{generating ? 'progress_activity' : 'auto_awesome'}</span>
-              {generating ? '正在生成…' : '生成中文字幕'}
+              {generating ? '正在生成并校对…' : captions.length ? '重新生成并校对字幕' : '生成中文字幕'}
             </button>
+            <button type="button" disabled={generating||!captions.length} onClick={()=>{const next=reflowCaptionPages(captions);if(JSON.stringify(next)===JSON.stringify(captions)){setReflowMessage('分句已是当前结果。');return;}pushHistory();useEditor.getState().setCaptions(next);useEditor.getState().select(null);setReflowMessage(`已整理为 ${next.length} 条字幕，请预览确认。`);}} className="w-full mt-2 py-2 border border-outline-variant/40 rounded text-xs">按意群整理分句 · 可撤销</button>
+            {reflowMessage&&<p role="status" className="text-xs mt-1">{reflowMessage}</p>}
+            <p className="text-[10px] opacity-70 mt-1">只整理现有文字与原词时间，不重识别、不改原声；已校正时间的字幕保持原样。</p>
             {generating && <p className="text-[11px] text-on-surface-variant mt-2 mb-3 truncate">{progressLabel}</p>}
             <div className="mb-5" />
+
+            <section aria-labelledby="all-caption-top-label" className="mb-5 p-3 rounded-lg border border-outline-variant/40">
+              <label id="all-caption-top-label" htmlFor="all-caption-top" className="text-[11px] text-on-surface-variant">全部字幕垂直位置（%）</label>
+              <input
+                id="all-caption-top"
+                type="number" min={5} max={92} step="any" value={allCaptionTop}
+                onChange={e => setAllCaptionTop(e.target.value)}
+                className="w-full my-2 rounded p-2 bg-surface-container-lowest border border-outline-variant/40"
+              />
+              <button type="button" disabled={!canApplyCaptionTop}
+                onClick={() => { if (canApplyCaptionTop) setAllCaptionTopPct(allCaptionTopValue); }}
+                className="w-full py-2 rounded border border-outline-variant/40 text-[11px] disabled:opacity-40">
+                应用到全部字幕 · 一次撤销
+              </button>
+              <p className="text-[10px] text-on-surface-variant mt-2">5—92%；点击应用后生效，仅调整字幕位置。</p>
+            </section>
 
             {/* selected clip card */}
             {selClip && (
@@ -235,10 +263,10 @@ export const Inspector: React.FC<{
                             className="w-full mt-1 mb-3 bg-surface-container-lowest text-on-surface border border-outline-variant/40 focus:border-primary rounded p-2 text-body-md resize-y"
                           />
                           {(()=>{const original=captions.find(cap=>cap.id===c.id),clip=clips.find(clip=>clip.id===original?.clipId);return original&&clip?<><CaptionReviewSave key={c.id} caption={original} src={clip.src}/><CaptionTimingEditor key={'timing-'+c.id} caption={original} src={clip.src}/></>:null;})()}
-                          <label htmlFor="caption-top" className="text-[11px] text-on-surface-variant">垂直位置： {c.topPct}%</label>
+                          <label htmlFor="caption-top" className="text-[11px] text-on-surface-variant">垂直位置： {c.styleOverride?.topPct??presentation.captionStyle?.topPct??c.topPct}%</label>
                           <input
                             id="caption-top"
-                            type="range" min={5} max={92} value={c.topPct}
+                            type="range" min={5} max={92} value={c.styleOverride?.topPct??presentation.captionStyle?.topPct??c.topPct}
                             aria-valuetext={`${c.topPct}% from the top`}
                             onPointerDown={pushHistory}
                             onKeyDown={(e) => {if(!e.repeat&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(e.key))pushHistory();}}
@@ -346,6 +374,7 @@ export const Inspector: React.FC<{
 
         {tab === '样式' && (
           <div>
+            <CaptionStylePanel/>
             <p id="accent-color-label" className="text-label-bold font-label-bold uppercase text-on-surface-variant">强调色</p>
             <div role="group" aria-labelledby="accent-color-label" className="flex flex-wrap gap-2 mt-3">
               {ACCENT_SWATCHES.map((c) => {
@@ -356,7 +385,7 @@ export const Inspector: React.FC<{
                     type="button"
                     aria-label={`Accent color ${c}`}
                     aria-pressed={on}
-                    onClick={() => setAccentColor(c)}
+                    onClick={() => presentation.captionStyle?setPresentation({...presentation,captionStyle:{...presentation.captionStyle,accentColor:c}}):setAccentColor(c)}
                     style={{background: c}}
                     className={`w-8 h-8 rounded-full border-2 ${on ? 'border-on-surface' : 'border-transparent'}`}
                     title={c}
@@ -368,6 +397,7 @@ export const Inspector: React.FC<{
           </div>
         )}
 
+        {tab === '动效' && <><ImageWindowPanel playerRef={playerRef}/><TalkingMotionPanel playerRef={playerRef}/></>}
         {tab === '音乐' && (
           <div className="space-y-5">
             <section aria-labelledby="music-heading">

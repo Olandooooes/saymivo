@@ -37,3 +37,14 @@ export function sampleFocusRegions(regions=[],ms=0,transitionMs=350){
   return sample;
  });
 }
+
+// Independent outer-window motion; camera keys continue to move intrinsic pixels.
+export function sampleMediaWindow(media={},ms=0){
+ const full={x:0,y:0,width:1,height:1};
+ const points=(media.windowKeyframes??[]).filter(p=>Number.isFinite(p.atMs)&&['x','y','width','height'].every(k=>Number.isFinite(p[k]))&&p.x>=0&&p.y>=0&&p.width>0&&p.height>0&&p.x+p.width<=1.00001&&p.y+p.height<=1.00001).sort((a,b)=>a.atMs-b.atMs);
+ if(!points.length)return full;
+ const rect=p=>Object.fromEntries(['x','y','width','height'].map(k=>[k,p[k]]));
+ if(ms<=points[0].atMs)return rect(points[0]);if(ms>=points.at(-1).atMs)return rect(points.at(-1));
+ for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i];if(ms<=b.atMs){const t=smooth((ms-a.atMs)/(b.atMs-a.atMs));return Object.fromEntries(['x','y','width','height'].map(k=>[k,a[k]+(b[k]-a[k])*t]));}}
+ return full;
+}

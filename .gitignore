@@ -79,7 +79,9 @@ scripts/package-agent-delivery.py
 scripts/check-audio-sync.py
 scripts/check-forced-alignment.py
 scripts/compare-transcript-review.py
-scripts/forced_alignment_compare.py
-scripts/test_forced_alignment_compare.py
-scripts/normalize-caption-script.py
 scripts/review-transcript.py
+
+# Local render outputs and tool temp files
+output/
+vite.config.ts.timestamp-*.mjs
+._*
