@@ -8,6 +8,20 @@ import {spawnSync} from 'node:child_process';
 import {createDynamicAssetRoute,dynamicAssetProbeBinary,probeDynamicAsset,validateDynamicAssetSource} from '../server/dynamic-asset-routes.mjs';
 
 const digest=value=>createHash('sha256').update(value).digest('hex');
+// ext4 multigrain timestamps keep mtime/ctime unchanged for a same-size rewrite
+// inside the current coarse tick. Wait until a fresh file lands on a later tick
+// so the following rewrite is visible to the dev/ino/size/mtime/ctime stamp.
+async function waitForTimestampTick(file){
+ const st=fs.statSync(file,{bigint:true}),seen=new Set([st.mtimeNs,st.ctimeNs]),probe=file+'.tick',deadline=Date.now()+3000;
+ try{
+  while(Date.now()<deadline){
+   fs.writeFileSync(probe,'t');
+   if(!seen.has(fs.statSync(probe,{bigint:true}).mtimeNs))return;
+   await new Promise(resolve=>setTimeout(resolve,20));
+  }
+ }finally{fs.rmSync(probe,{force:true});}
+ throw Error('filesystem timestamp did not advance');
+}
 function fixture(t){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'dynamic-asset-')),PUBLIC=path.join(root,'public');fs.mkdirSync(path.join(PUBLIC,'assets'),{recursive:true});
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return {ROOT:root,PUBLIC,file:path.join(PUBLIC,'assets/a.bin')};
@@ -60,13 +74,13 @@ test('same-size replacement with copied mtime cannot reuse the previous SHA or d
  fs.writeFileSync(replacement,'BBBB');fs.utimesSync(replacement,old.atime,old.mtime);fs.renameSync(replacement,f.file);
  const after=await api.inspect('assets/a.bin');assert.notEqual(after.sha256,before.sha256);assert.equal(after.sha256,digest('BBBB'));assert.equal(after.width,200);assert.equal(calls,2);
  // In-place bytes changed with the previous mtime restored also change ctime.
- const old2=fs.statSync(f.file);fs.writeFileSync(f.file,'CCCC');fs.utimesSync(f.file,old2.atime,old2.mtime);
+ const old2=fs.statSync(f.file);await waitForTimestampTick(f.file);fs.writeFileSync(f.file,'CCCC');fs.utimesSync(f.file,old2.atime,old2.mtime);
  assert.equal((await api.inspect('assets/a.bin')).sha256,digest('CCCC'));assert.equal(calls,3);
 });
 
 test('a source changed or unlinked while probing is rejected and never cached',async t=>{
  const f=fixture(t);fs.writeFileSync(f.file,'AAAA');let calls=0;
- const api=createDynamicAssetRoute({...f,json,probe:async()=>{calls++;if(calls===1)fs.writeFileSync(f.file,'BBBB');return {width:calls*100,height:100,kind:'image'};}});
+ const api=createDynamicAssetRoute({...f,json,probe:async()=>{calls++;if(calls===1){await waitForTimestampTick(f.file);fs.writeFileSync(f.file,'BBBB');}return {width:calls*100,height:100,kind:'image'};}});
  assert.equal((await request(api)).status,409);const retry=await request(api);assert.equal(retry.status,200);assert.equal(retry.value.sha256,digest('BBBB'));assert.equal(retry.value.width,200);
  const unlinked=createDynamicAssetRoute({...f,json,probe:async()=>{fs.unlinkSync(f.file);return image();}});assert.equal((await request(unlinked)).status,404);
 });
