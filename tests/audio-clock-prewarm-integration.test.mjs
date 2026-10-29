@@ -48,7 +48,7 @@ function frozenChild(root,from){
   if(name.endsWith('use-video-config.js'))return {useVideoConfig:()=>({id:'synthetic'})};
   throw Error(name);
  }};
- vm.runInNewContext(fs.readFileSync(new URL('../node_modules/remotion/dist/cjs/Freeze.js',import.meta.url),'utf8'),context);
+ vm.runInNewContext(fs.readFileSync(new URL('../node_modules/remotion/dist/cjs/freeze.js',import.meta.url),'utf8'),context);
  return context.exports.Freeze({frame:from,active:true,children:null}).props.value;
 }
 class Media extends EventTarget{
