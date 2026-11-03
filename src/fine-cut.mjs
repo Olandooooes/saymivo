@@ -173,7 +173,13 @@ export function clipSpeechReference(samples, sampleRate) {
   const noise = all[Math.floor(all.length * 0.2)];
   const speech = all[Math.floor(all.length * 0.9)];
   if (!(speech > Math.max(noise * 3, 0.01))) return null;
-  return {speech, noise, threshold: Math.max(noise * 1.6, speech * 10 ** (-18 / 20))};
+  const threshold = Math.max(noise * 1.6, speech * 10 ** (-18 / 20));
+  // P80 of windows that already clear the silence gate. A breath can sit above
+  // that gate and still be far quieter than real speech.
+  const spoken = all.filter(value => value >= threshold);
+  const speechP80 = spoken.length ? spoken[Math.min(spoken.length - 1, Math.floor(spoken.length * 0.8))] : speech;
+  const voiced = speechP80 * 10 ** (-12 / 20);
+  return {speech, noise, threshold, speechP80, voiced};
 }
 
 // Room tone often sits just above a fixed -42 dB gate. Threshold follows the
@@ -255,9 +261,9 @@ export function energyGapsInsideWords(words, samples, sampleRate) {
       region.endSec = Math.min(region.endSec, word.endMs / 1000);
       const duration = region.endSec - region.startSec;
       if (duration < 0.12) continue;
-      const speechBefore = loudDuration(inside, reference.threshold, word.startMs / 1000, region.startSec);
-      const speechAfter = loudDuration(inside, reference.threshold, region.endSec, word.endMs / 1000);
-      found.push({...region, duration, word, speechBefore, speechAfter, msPerChar: spanSec / chars * 1000});
+      const speechBefore = loudDuration(inside, reference.voiced, word.startMs / 1000, region.startSec);
+      const speechAfter = loudDuration(inside, reference.voiced, region.endSec, word.endMs / 1000);
+      found.push({...region, duration, word, speechBefore, speechAfter, msPerChar: spanSec / chars * 1000, threshold: reference.threshold});
     }
   }
   return found;
@@ -286,6 +292,35 @@ function firstKeptWord(candidate, speech) {
   const retain = candidate.retain?.startSec;
   if (retain == null) return null;
   return speech.find(word => word.startMs / 1000 >= retain - 0.001) ?? null;
+}
+
+function forwardQuietSec(floorSec, hardEndSec, samples, sampleRate, thresholdRms) {
+  if (!samples || !sampleRate) return floorSec;
+  const win = Math.max(1, Math.round(0.02 * sampleRate));
+  const startIndex = Math.max(0, Math.floor(floorSec * sampleRate));
+  const limit = Math.min(samples.length - win, Math.ceil((hardEndSec ?? floorSec) * sampleRate));
+  for (let index = startIndex; index <= limit; index += Math.max(1, Math.floor(win / 2))) {
+    let energy = 0;
+    const count = Math.min(win, samples.length - index);
+    if (count < win / 2) break;
+    for (let offset = 0; offset < count; offset++) {
+      const value = samples[index + offset] / 32768;
+      energy += value * value;
+    }
+    if (Math.sqrt(energy / count) >= thresholdRms) continue;
+    let best = index;
+    let bestAbs = Infinity;
+    for (let offset = 0; offset < count; offset++) {
+      const level = Math.abs(samples[index + offset]);
+      if (level < bestAbs) { bestAbs = level; best = index + offset; }
+    }
+    return Math.max(floorSec, best / sampleRate);
+  }
+  return floorSec;
+}
+
+function frameAtOrAfter(sec, fps) {
+  return Math.ceil(sec * fps - 1e-6) / fps;
 }
 
 function snapRemoval(startSec, endSec, {samples, sampleRate, fps, hardEndSec}) {
@@ -363,12 +398,19 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
         });
       }
     }
-    // Only speech–dip–speech inside one token is a possible restart.
-    // A trailing breath or a fully quiet token is a pause, not a false start.
+    // Only real speech–dip–speech inside one token is a possible restart.
+    // Breath clears the silence gate, and a trailing or fully quiet token is a pause.
     if (!(bothSides && dip.msPerChar >= 450 && dip.word.endMs - dip.word.startMs >= 600 && dip.duration >= 0.12)) continue;
     const resume = dip.endSec;
-    const [start, end] = snapRemoval(dip.word.startMs / 1000, dip.endSec, {samples, sampleRate, fps, hardEndSec: resume});
-    if (!(end - start > 0.05) || end * 1000 > dip.word.endMs) continue;
+    const ordered = [...speech].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+    const place = ordered.findIndex(item => item === dip.word);
+    const previous = place > 0 ? ordered[place - 1] : null;
+    const floorSec = Math.max(dip.word.startMs / 1000, previous ? previous.endMs / 1000 : 0);
+    const quiet = forwardQuietSec(floorSec, resume, samples, sampleRate, dip.threshold);
+    let start = frameAtOrAfter(Math.max(floorSec, quiet), fps);
+    const [, end] = snapRemoval(start, dip.endSec, {samples, sampleRate, fps, hardEndSec: resume});
+    if (start < floorSec) start = frameAtOrAfter(floorSec, fps);
+    if (!(end - start > 0.05) || end * 1000 > dip.word.endMs || start * 1000 + 1 < Math.round(floorSec * 1000)) continue;
     if (removes.some(row => row.kind === 'false-start' && Math.abs(row.startMs - start * 1000) < 200)) continue;
     removes.push({
       id: `false-in-${dip.word.startMs}`, kind: 'false-start',

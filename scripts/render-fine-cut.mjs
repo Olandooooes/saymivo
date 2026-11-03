@@ -64,19 +64,34 @@ export function planFromClock({wav, receipt, words, clip, fps = 30, glossary = '
   return {words: document, cutlist, silences, durationSec};
 }
 
+// Integer frame window. Millisecond trim drops or keeps a whole frame whenever
+// the timestamp falls between frame PTS, and those errors stack across cuts.
+export function frameSegments(keeps, fps) {
+  const segments = [];
+  for (const [start, end] of keeps) {
+    const fs = Math.round(start * fps);
+    const fe = Math.round(end * fps);
+    if (!(fe > fs)) continue;
+    const frames = fe - fs;
+    segments.push({fs, fe, frames, startSec: fs / fps, endSec: fe / fps, durationSec: frames / fps});
+  }
+  return segments;
+}
+
 export function filterGraph(keeps, fps) {
   // Audio PTS already include the container delay. Subtracting audioOffsetMs
   // here trims that delay a second time and the soundtrack lands ~offset late.
-  const parts = keeps.map(([start, end], index) => {
-    const duration = Math.max(1 / fps, end - start);
-    const fade = duration > 0.05 ? `,afade=t=in:st=0:d=0.012,afade=t=out:st=${Math.max(0, duration - 0.012).toFixed(4)}:d=0.012` : '';
-    const span = duration.toFixed(4);
-    const open = start.toFixed(4);
-    const close = end.toFixed(4);
-    return `[0:v]trim=start=${open}:end=${close},setpts=PTS-STARTPTS,fps=${fps}[v${index}];` +
+  // Video and audio of one piece share the same integer frame span.
+  const segments = frameSegments(keeps, fps);
+  const parts = segments.map((segment, index) => {
+    const span = segment.durationSec.toFixed(6);
+    const open = segment.startSec.toFixed(6);
+    const close = segment.endSec.toFixed(6);
+    const fade = segment.durationSec > 0.05 ? `,afade=t=in:st=0:d=0.012,afade=t=out:st=${Math.max(0, segment.durationSec - 0.012).toFixed(6)}:d=0.012` : '';
+    return `[0:v]trim=start_frame=${segment.fs}:end_frame=${segment.fe},setpts=PTS-STARTPTS,fps=${fps}[v${index}];` +
       `[0:a]atrim=start=${open}:end=${close},asetpts=PTS-STARTPTS${fade},apad=whole_dur=${span},atrim=0:${span}[a${index}]`;
   });
-  const concat = keeps.map((_, index) => `[v${index}][a${index}]`).join('') + `concat=n=${keeps.length}:v=1:a=1[v][a]`;
+  const concat = segments.map((_, index) => `[v${index}][a${index}]`).join('') + `concat=n=${segments.length}:v=1:a=1[v][a]`;
   return parts.join(';') + ';' + concat;
 }
 
@@ -96,7 +111,7 @@ export function renderFineCut({source, cutlist, clip, output, fps = 30}) {
   fs.rmSync(temporary, {force: true});
   const measured = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
   const duration = probeDuration(output);
-  const expected = keeps.reduce((sum, [start, end]) => sum + (end - start), 0);
+  const expected = frameSegments(keeps, fps).reduce((sum, segment) => sum + segment.durationSec, 0);
   return {output, keeps, durationSec: duration, expectedSec: expected, loudness: measured.applied ?? measured.analysis, sync: syncAtCuts(output, keeps, fps)};
 }
 
@@ -105,26 +120,47 @@ function probeDuration(file) {
   return Number(JSON.parse(probe.stdout).format.duration);
 }
 
+function videoFrameTimes(file) {
+  const result = spawnSync('ffprobe', [
+    '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'frame=best_effort_timestamp_time', '-of', 'csv=p=0', file,
+  ], {encoding: 'utf8'});
+  return result.stdout.split('\n').map(line => line.trim()).filter(Boolean).map(line => Number(line.replace(/,/g, ''))).filter(Number.isFinite);
+}
+
+function nearestTime(times, target) {
+  if (!times.length) return null;
+  return times.reduce((best, value) => Math.abs(value - target) < Math.abs(best - target) ? value : best);
+}
+
 export function syncAtCuts(file, keeps, fps) {
-  const probed = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,start_time,duration', '-of', 'json', file], {encoding: 'utf8'}).stdout);
-  const video = probed.streams.find(stream => stream.codec_type === 'video');
-  const audio = probed.streams.find(stream => stream.codec_type === 'audio');
+  const probed = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,start_time,duration,nb_frames', '-of', 'json', file], {encoding: 'utf8'}).stdout);
+  const video = probed.streams?.find(stream => stream.codec_type === 'video');
+  const audio = probed.streams?.find(stream => stream.codec_type === 'audio');
   const startDelta = Number(video?.start_time) - Number(audio?.start_time);
   const durationDelta = Number(video?.duration) - Number(audio?.duration);
+  const segments = frameSegments(keeps, fps);
   const joins = [];
   let cursor = 0;
-  keeps.forEach((range, index) => {
-    cursor += range[1] - range[0];
-    if (index < keeps.length - 1) joins.push(cursor);
+  segments.forEach((segment, index) => {
+    cursor += segment.durationSec;
+    if (index < segments.length - 1) joins.push(cursor);
   });
-  const rows = joins.slice(0, 5).map(time => {
+  const frames = videoFrameTimes(file);
+  const rows = joins.map(time => {
     const audioPts = packetTime(file, 'a', time);
-    return {outputSec: +time.toFixed(3), audioPts, audioDeltaSec: audioPts == null ? null : audioPts - time};
+    const videoPts = nearestTime(frames, time);
+    return {
+      outputSec: +time.toFixed(6),
+      audioPts, audioDeltaSec: audioPts == null ? null : audioPts - time,
+      videoPts, videoDeltaSec: videoPts == null ? null : videoPts - time,
+    };
   });
   const frame = 1 / fps;
+  const close = delta => delta != null && Math.abs(delta) <= frame + 1e-4;
   return {
     startDeltaSec: startDelta, durationDeltaSec: durationDelta, joins: rows,
-    withinOneFrame: Math.abs(startDelta) <= frame && Math.abs(durationDelta) <= 0.08 && rows.every(row => row.audioDeltaSec != null && Math.abs(row.audioDeltaSec) <= frame),
+    videoFrames: frames.length || Number(video?.nb_frames) || 0,
+    withinOneFrame: Math.abs(startDelta) <= frame + 1e-4 && Math.abs(durationDelta) <= frame + 1e-4 && rows.every(row => close(row.audioDeltaSec) && close(row.videoDeltaSec)),
   };
 }
 

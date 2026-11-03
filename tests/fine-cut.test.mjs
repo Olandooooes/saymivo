@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {adaptiveSilenceRanges, buildCutlist, buildWordsDocument, keepRanges, projectSourceMs, audioRangeForVideo, snapTimeMs} from '../src/fine-cut.mjs';
-import {filterGraph, planFromClock, readPcm16, renderFineCut} from '../scripts/render-fine-cut.mjs';
+import {filterGraph, frameSegments, planFromClock, readPcm16, renderFineCut, syncAtCuts} from '../scripts/render-fine-cut.mjs';
 
 const words = [
   {text: '我们今天讲剪辑', startMs: 200, endMs: 1400},
@@ -39,7 +39,10 @@ test('repeated sentence is a proposed retake and a long pause shrinks to about 1
   assert.ok(kept < 7 && kept > 3.5, kept);
   assert.equal(projectSourceMs(5000, keeps) != null, true);
   assert.equal(audioRangeForVideo(1, 2, 0.213).startSec, 1);
-  assert.match(filterGraph([[1, 2]], 30), /\[0:a\]atrim=start=1\.0000:end=2\.0000/);
+  assert.match(filterGraph([[1, 2]], 30), /trim=start_frame=30:end_frame=60/);
+  assert.match(filterGraph([[1, 2]], 30), /\[0:a\]atrim=start=1\.000000:end=2\.000000/);
+  assert.match(filterGraph([[122.067, 122.233]], 30), /trim=start_frame=3662:end_frame=3667/);
+  assert.match(filterGraph([[122.067, 122.233]], 30), /atrim=start=122\.066667:end=122\.233333/);
   assert.doesNotMatch(filterGraph([[1, 2]], 30), /atrim=start=0\.7870/);
 });
 
@@ -212,7 +215,7 @@ test('an in-word false start is pending and its edges sit on frames', () => {
   const samples = new Int16Array(rate * 3);
   for (let index = 0; index < samples.length; index++) {
     const time = index / rate;
-    const speaking = time >= 1.3 || (time >= 0.05 && time < 0.22) || (time >= 0.72 && time < 1.05);
+    const speaking = time >= 1.3 || (time >= 0.12 && time < 0.28) || (time >= 0.72 && time < 1.05);
     samples[index] = Math.round((speaking ? loud : 0) * Math.sin(2 * Math.PI * 240 * time));
   }
   const cutlist = buildCutlist({
@@ -232,6 +235,74 @@ test('an in-word false start is pending and its edges sit on frames', () => {
   const accepted = keepRanges(clip, cutlist.removes.map(row => row.id === hit.id ? {...row, status: 'accepted'} : row));
   assert.equal(projectSourceMs(100, accepted), null);
   assert.ok(projectSourceMs(800, accepted) != null);
+});
+
+function windowRms(samples, rate, sec) {
+  const win = Math.round(0.02 * rate);
+  const origin = Math.max(0, Math.round(sec * rate));
+  let energy = 0;
+  let count = 0;
+  for (let index = 0; index < win && origin + index < samples.length; index++) {
+    const value = samples[origin + index] / 32768;
+    energy += value * value;
+    count += 1;
+  }
+  return Math.sqrt(energy / Math.max(1, count));
+}
+
+test('a breath after a dip is not counted as the speech on the far side', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const breath = Math.round(loud * 10 ** (-15 / 20));
+  const samples = new Int16Array(rate * 4);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const full = time < 1.5 || time >= 2.8 || (time >= 1.5 && time < 1.72);
+    const air = time >= 2.35 && time < 2.7;
+    const amp = full ? loud : air ? breath : Math.round(loud / 40);
+    samples[index] = Math.round(amp * Math.sin(2 * Math.PI * 210 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [{text: '架。', startMs: 1500, endMs: 2700}],
+    clip: {id: 'talk', src: 'clips/talk.mp4', inSec: 0, outSec: 4},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  assert.equal(cutlist.removes.some(row => row.kind === 'false-start'), false, JSON.stringify(cutlist.removes));
+  assert.ok(cutlist.removes.some(row => row.kind === 'pause'), JSON.stringify(cutlist.removes));
+});
+
+test('an in-word false start starts after the previous word on a quiet sample', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const samples = new Int16Array(rate * 4);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const speaking = time < 0.4 || (time >= 0.48 && time < 0.7) || (time >= 1.2 && time < 1.55) || time >= 2.6;
+    samples[index] = Math.round((speaking ? loud : 0) * Math.sin(2 * Math.PI * 240 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [
+      {text: '从', startMs: 0, endMs: 400},
+      {text: '回', startMs: 360, endMs: 1550},
+    ],
+    clip: {id: 'take', src: 'clips/take.mp4', inSec: 0, outSec: 4},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  const hit = cutlist.removes.find(row => row.kind === 'false-start');
+  assert.ok(hit, JSON.stringify(cutlist.removes));
+  assert.equal(hit.status, 'pending');
+  assert.ok(hit.startMs >= 400, hit.startMs);
+  assert.ok(hit.startMs < 480, hit.startMs);
+  assert.ok(onFrame(hit.startMs), hit.startMs);
+  assert.ok(onFrame(hit.endMs), hit.endMs);
+  assert.ok(hit.endMs <= 1200, hit.endMs);
+  const speechRms = windowRms(samples, rate, 0.1);
+  assert.ok(windowRms(samples, rate, hit.startMs / 1000) < speechRms * 0.25, windowRms(samples, rate, hit.startMs / 1000));
+  const clip = {inSec: 0, outSec: 4};
+  const accepted = keepRanges(clip, cutlist.removes.map(row => row.id === hit.id ? {...row, status: 'accepted'} : row));
+  assert.ok(projectSourceMs(200, accepted) != null);
+  assert.equal(projectSourceMs(550, accepted), null);
+  assert.ok(projectSourceMs(1300, accepted) != null);
 });
 
 test('silence folded into a word duration is still proposed as a pause', () => {
@@ -374,4 +445,86 @@ test('audio that already starts 0.213s after video stays aligned with the source
   assert.equal(spawnSync('ffmpeg', ['-y', '-i', output, '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', decoded], {encoding: 'utf8'}).status, 0);
   const lag = bestLagSec(readPcm16(wav), readPcm16(decoded), 16000);
   assert.ok(Math.abs(lag - 1.2) < 0.05, `burst matches source at ${lag.toFixed(3)}s, expected 1.200s`);
+});
+
+test('off-frame pieces stay the same length in audio and video, including the last piece', () => {
+  const fps = 30;
+  const frame = 1 / fps;
+  const keeps = [
+    [0.067, 0.401],
+    [0.567, 0.833],
+    [1.067, 1.501],
+    [1.733, 2.067],
+    [2.233, 2.567],
+    [2.801, 3.233],
+    [3.401, 3.567],
+  ];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fine-frames-'));
+  const source = path.join(dir, 'src.mp4');
+  const made = spawnSync('ffmpeg', [
+    '-y', '-f', 'lavfi', '-t', '4', '-i', 'color=c=black:s=160x90:r=30',
+    '-f', 'lavfi', '-t', '4', '-i', 'sine=frequency=440:sample_rate=48000',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'pcm_s16le', source,
+  ], {encoding: 'utf8'});
+  assert.equal(made.status, 0, made.stderr?.slice(-400));
+  const removes = [];
+  for (let index = 0; index < keeps.length - 1; index++) {
+    removes.push({status: 'accepted', kind: 'pause', startMs: Math.round(keeps[index][1] * 1000), endMs: Math.round(keeps[index + 1][0] * 1000)});
+  }
+  const output = path.join(dir, 'fine.mp4');
+  const rendered = renderFineCut({
+    source, output, fps,
+    clip: {inSec: keeps[0][0], outSec: keeps.at(-1)[1]},
+    cutlist: {removes},
+  });
+  const segments = frameSegments(rendered.keeps, fps);
+  assert.equal(segments.length, keeps.length);
+  const expectedFrames = segments.reduce((sum, segment) => sum + segment.frames, 0);
+  const probed = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,duration,nb_frames', '-of', 'json', output], {encoding: 'utf8'}).stdout);
+  const video = probed.streams.find(stream => stream.codec_type === 'video');
+  const audio = probed.streams.find(stream => stream.codec_type === 'audio');
+  assert.equal(Number(video.nb_frames), expectedFrames);
+  assert.ok(Math.abs(Number(video.duration) - Number(audio.duration)) <= frame, `${video.duration} vs ${audio.duration}`);
+  assert.ok(Math.abs(Number(video.duration) - rendered.expectedSec) <= frame, `${video.duration} vs ${rendered.expectedSec}`);
+  const pts = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'frame=best_effort_timestamp_time', '-of', 'csv=p=0', output], {encoding: 'utf8'})
+    .stdout.split('\n').map(line => line.trim()).filter(Boolean).map(line => Number(line.replace(/,/g, ''))).filter(Number.isFinite);
+  let cursor = 0;
+  for (const segment of segments) {
+    const count = pts.filter(time => time >= cursor - 1e-4 && time < cursor + segment.durationSec - 1e-4).length;
+    assert.equal(count, segment.frames, `segment at ${cursor} has ${count} frames, expected ${segment.frames}`);
+    cursor += segment.durationSec;
+  }
+  assert.equal(rendered.sync.joins.length, keeps.length - 1);
+  assert.equal(rendered.sync.withinOneFrame, true, JSON.stringify(rendered.sync));
+  const tail = segments.at(-1).durationSec;
+  assert.ok(Math.abs((Number(audio.duration) - (rendered.expectedSec - tail)) - tail) <= frame);
+});
+
+test('the sync check flags a late join and a duration gap the old 80ms gate ignored', () => {
+  const fps = 30;
+  const frame = 1 / fps;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fine-drift-'));
+  const short = path.join(dir, 'short.mp4');
+  const made = spawnSync('ffmpeg', [
+    '-y', '-f', 'lavfi', '-t', '1.333333', '-i', 'color=c=black:s=160x90:r=30',
+    '-f', 'lavfi', '-t', '1.333333', '-i', 'sine=frequency=440:sample_rate=48000',
+    '-frames:v', '40', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', short,
+  ], {encoding: 'utf8'});
+  assert.equal(made.status, 0, made.stderr?.slice(-400));
+  const keeps = Array.from({length: 7}, (_, index) => [index * 8 * frame, (index + 1) * 8 * frame]);
+  const late = syncAtCuts(short, keeps, fps);
+  assert.equal(late.joins.length, 6);
+  assert.ok(Math.abs(late.joins[5].videoDeltaSec) > frame, JSON.stringify(late.joins[5]));
+  assert.equal(late.withinOneFrame, false, JSON.stringify(late));
+  const padded = path.join(dir, 'padded.mp4');
+  const pad = spawnSync('ffmpeg', [
+    '-y', '-f', 'lavfi', '-t', '1', '-i', 'color=c=black:s=160x90:r=30',
+    '-f', 'lavfi', '-t', '1.05', '-i', 'sine=frequency=440:sample_rate=48000',
+    '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-t', '1.05', padded,
+  ], {encoding: 'utf8'});
+  assert.equal(pad.status, 0, pad.stderr?.slice(-400));
+  const drift = syncAtCuts(padded, [[0, 1]], fps);
+  assert.ok(Math.abs(drift.durationDeltaSec) > frame, drift.durationDeltaSec);
+  assert.ok(Math.abs(drift.durationDeltaSec) < 0.08, drift.durationDeltaSec);
+  assert.equal(drift.withinOneFrame, false, JSON.stringify(drift));
 });
