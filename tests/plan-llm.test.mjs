@@ -13,7 +13,7 @@ const words = [
   {id: 'c', text: '一个', startMs: 2000, endMs: 2600},
   {id: 'd', text: '框架', startMs: 2600, endMs: 4200},
 ];
-const removes = [{status: 'accepted', startMs: 400, endMs: 900}];
+const removes = [{status: 'accepted', kind: 'false-start', startMs: 400, endMs: 900}];
 
 function reply(body) {
   return async () => ({choices: [{message: {content: JSON.stringify(body)}}]});

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, layoutRects, presentation, prepareWords, punchProgress, redraftSentence, talentScale, validatePlan} from '../src/plan.mjs';
+import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, layoutRects, presentation, prepareWords, punchProgress, readFaceBox, redraftSentence, subtitlePhrases, talentScale, validatePlan, windowRect} from '../src/plan.mjs';
 import {filterGraph, PORTRAIT_ENHANCE} from '../scripts/render-fine-cut.mjs';
 import {publicVideoPath, remuxOriginalAudio} from '../scripts/plan-files.mjs';
 import {spawnSync} from 'node:child_process';
@@ -34,11 +34,11 @@ test('a punch or slide cue on a removed word is dropped instead of highlighted',
     punch: {text: '只留完整', atWordId: 'w2', atMs: 3000},
     slide: {kind: 'comparison', items: [{id: 'a', title: '留着重说', atWordId: 'w1'}, {id: 'b', title: '只留完整', atWordId: 'w2'}]},
   }]};
-  const checked = validatePlan(plan, {words, removes: [{status: 'accepted', startMs: 2800, endMs: 3900}]});
+  const checked = validatePlan(plan, {words, removes: [{status: 'accepted', kind: 'false-start', startMs: 2800, endMs: 3900}]});
   assert.equal(checked.plan.sentences[0].punch, null);
   assert.equal(checked.plan.sentences[0].slide.items[1].status, 'proposed');
   assert.equal(highlightAtMs(checked.plan.sentences[0].slide.items[1]), null);
-  const shown = presentation({plan, words, removes: [{status: 'accepted', startMs: 2800, endMs: 3900}], faceBox: {x: 0.62, y: 0.2, w: 0.2, h: 0.3}, clip: {inSec: 0, outSec: 10}});
+  const shown = presentation({plan, words, removes: [{status: 'accepted', kind: 'false-start', startMs: 2800, endMs: 3900}], faceBox: {x: 0.62, y: 0.2, w: 0.2, h: 0.3}, clip: {inSec: 0, outSec: 10}});
   const item = shown.plan.sentences[0].slide.items[0];
   assert.ok(Math.abs(item.atMs - 1000) <= 150, item.atMs);
 });
@@ -101,7 +101,7 @@ test('a kept phrase is not built from a cut word, and accepted corrections repla
     {id: 'd', text: '一个框架', startMs: 2500, endMs: 4200},
   ];
   const corrections = [{status: 'accepted', wordIds: ['b'], after: 'AI Agent'}];
-  const removes = [{status: 'accepted', startMs: 680, endMs: 1200}];
+  const removes = [{status: 'accepted', kind: 'false-start', startMs: 680, endMs: 1200}];
   const kept = prepareWords(words, {removes, corrections});
   assert.equal(kept.some(word => word.text === '给你'), false);
   assert.ok(kept.some(word => word.text === 'AI Agent'));
@@ -164,6 +164,7 @@ test('the rendered plan points at a public-relative file and keeps the fine-cut 
   fs.mkdirSync(publicDir);
   const outside = path.join(dir, 'fine.mp4');
   fs.writeFileSync(outside, 'video');
+  assert.equal(fs.readFileSync(new URL('../scripts/plan-files.mjs', import.meta.url), 'utf8').includes('-shortest'), false);
   assert.equal(publicVideoPath(outside, publicDir), 'plan-src/fine.mp4');
   assert.equal(fs.readFileSync(path.join(publicDir, 'plan-src/fine.mp4'), 'utf8'), 'video');
   const make = (file, audioSeconds) => spawnSync('ffmpeg', ['-y', '-f', 'lavfi', '-t', '1', '-i', 'color=c=black:s=160x90:r=30', '-f', 'lavfi', '-t', String(audioSeconds), '-i', 'sine=frequency=440:sample_rate=48000', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', file], {encoding: 'utf8'});
@@ -179,6 +180,46 @@ test('the rendered plan points at a public-relative file and keeps the fine-cut 
   assert.equal(detected.status, 0, detected.stderr);
   const face = JSON.parse(fs.readFileSync(path.join(dir, 'face.json'), 'utf8'));
   assert.equal(Object.hasOwn(face, 'face'), true);
+});
+
+test('a pause shrink does not drop an audible word, and phrases stay on kept word boundaries', () => {
+  const words = [
+    {id: 'a', text: '找错', startMs: 0, endMs: 400},
+    {id: 'b', text: '资料', startMs: 400, endMs: 1600},
+    {id: 'c', text: 'Agent最值得关注', startMs: 1800, endMs: 2600},
+  ];
+  const pause = [{status: 'accepted', kind: 'pause', startMs: 500, endMs: 1400}];
+  assert.ok(prepareWords(words, {removes: pause}).some(word => word.id === 'b'));
+  const phrases = subtitlePhrases(prepareWords(words, {removes: pause}));
+  assert.equal(phrases.some(phrase => phrase.text.includes('资料')), true);
+  assert.ok(phrases.some(phrase => phrase.text.includes('Agent最值得关注')));
+  assert.equal(phrases.some(phrase => phrase.text.includes('Agent最值') && !phrase.text.includes('Agent最值得关注')), false);
+  const removed = [{status: 'accepted', kind: 'retake', startMs: 0, endMs: 500}];
+  const afterCut = presentation({
+    plan: draftPlan({words, removes: removed}),
+    words, removes: removed, faceBox: null, clip: {inSec: 0, outSec: 4},
+  });
+  assert.equal(JSON.stringify(afterCut.plan.phrases).includes('找错'), false);
+});
+
+test('sentences follow the cut timeline and a null face does not keep a side title', () => {
+  const words = [
+    {id: 'a', text: '如果', startMs: 0, endMs: 300},
+    {id: 'b', text: 'AI', startMs: 300, endMs: 600},
+    {id: 'c', text: '给你', startMs: 600, endMs: 900},
+    {id: 'd', text: '分析', startMs: 4000, endMs: 12000},
+  ];
+  const removes = [{status: 'accepted', kind: 'false-start', startMs: 500, endMs: 3900}];
+  const plan = draftPlan({words, removes, clip: {inSec: 0, outSec: 13}});
+  assert.equal(plan.sentences.filter(sentence => sentence.text.includes('如果')).length, 1);
+  assert.equal(plan.sentences.some(sentence => sentence.text === '如果'), false);
+  assert.ok(plan.chapters.length <= 6);
+  assert.equal(plan.sentences.some(sentence => sentence.punch?.text?.includes(',')), false);
+  const shown = presentation({plan, words, removes, faceBox: {face: null}, clip: {inSec: 0, outSec: 13}});
+  assert.ok(shown.plan.sentences.every(sentence => sentence.shot === 'medium' && !sentence.punch));
+  assert.equal(readFaceBox({face: null}), null);
+  const window = windowRect('medium');
+  assert.ok(Math.abs(window.y + window.h / 2 - 0.5) < 0.04, window.y);
 });
 
 test('portrait enhancement is optional and does not move the audio trim', () => {

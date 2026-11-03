@@ -66,8 +66,8 @@ function desiredRect(shot, resolved) {
     return {x: 1 - w - 0.05, y: 0.24, w, h};
   }
   const w = resolved.windowScale;
-  const h = Math.min(0.58, w * 0.9);
-  return {x: (1 - w) / 2, y: 0.5 - h / 2 + 0.08, w, h};
+  const h = Math.min(0.52, w * 0.82);
+  return {x: (1 - w) / 2, y: (1 - h) / 2, w, h};
 }
 
 export function windowRect(shot, style = DEFAULT_STYLE, source = FULL_HD, composition = FULL_HD) {
@@ -153,10 +153,25 @@ function wordById(words, id) {
   return (words ?? []).find(word => word.id === id) ?? null;
 }
 
+const SPEECH_CUTS = new Set(['retake', 'false-start']);
+
 function wordIsCut(word, removes) {
-  if (!word) return false;
-  const mid = (word.startMs + word.endMs) / 2;
-  return (removes ?? []).some(row => row.status === 'accepted' && mid >= row.startMs && mid < row.endMs);
+  const span = (word?.endMs ?? 0) - (word?.startMs ?? 0);
+  if (!(span > 0)) return false;
+  let covered = 0;
+  for (const row of removes ?? []) {
+    if (row.status !== 'accepted' || !SPEECH_CUTS.has(row.kind)) continue;
+    covered += Math.max(0, Math.min(word.endMs, row.endMs) - Math.max(word.startMs, row.startMs));
+  }
+  return covered / span >= 0.5;
+}
+
+export function readFaceBox(value) {
+  const face = value && typeof value === 'object' && Object.hasOwn(value, 'face') ? value.face : value;
+  if (!face || typeof face !== 'object') return null;
+  const {x, y, w, h} = face;
+  if (![x, y, w, h].every(number => typeof number === 'number' && Number.isFinite(number))) return null;
+  return {x, y, w, h};
 }
 
 function textUsesCutWord(text, words, removes) {
@@ -255,6 +270,7 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
 
 export function applyFaceSafe(plan, faceBox, style = DEFAULT_STYLE) {
   const resolved = resolveStyle({...style, ...plan?.style});
+  faceBox = readFaceBox(faceBox);
   const issues = [];
   const sentences = (plan?.sentences ?? []).map(sentence => {
     const next = {...sentence, punch: sentence.punch ? {...sentence.punch} : null};
@@ -339,10 +355,11 @@ export function projectPlan(plan, keeps, words = []) {
 }
 
 export function presentation({plan, words = [], removes = [], faceBox = null, clip = {inSec: 0, outSec: 1e9}, style} = {}) {
+  const face = readFaceBox(faceBox);
   const checked = validatePlan(plan, {words, removes});
-  const safe = applyFaceSafe(checked.plan, faceBox, style ?? plan?.style);
+  const safe = applyFaceSafe(checked.plan, face, style ?? plan?.style);
   const keeps = keepRanges(clip, removes ?? []);
-  const projected = projectPlan(safe.plan, keeps, words);
+  const projected = projectPlan(safe.plan, keeps, prepareWords(words, {removes}));
   return {plan: projected, keeps, style: safe.plan.style, issues: [...checked.issues, ...safe.issues]};
 }
 
@@ -373,25 +390,65 @@ function chunkWords(words, gapMs, punctuation, maxChars = Infinity) {
 function punchFromWords(group) {
   const picked = [];
   for (const word of group) {
-    const next = [...picked, word].map(item => item.text).join('');
+    const next = fold([...picked, word].map(item => item.text).join(''));
     if (picked.length && [...next].length > 8) break;
     picked.push(word);
     if ([...next].length >= 4) break;
   }
-  const text = picked.map(word => word.text).join('');
+  const text = fold(picked.map(word => word.text).join(''));
   if ([...text].length < 2) return null;
   return {text, atMs: picked[0].startMs, atWordId: picked[0].id};
 }
 
-function sentencesFromGroups(groups) {
+function lastKeptMs(word, keeps) {
+  for (let time = word.endMs - 1; time >= word.startMs; time -= 20) {
+    const projected = projectSourceMs(time, keeps);
+    if (projected != null) return projected;
+  }
+  return projectSourceMs(word.startMs, keeps);
+}
+
+function outputGapMs(previous, word, keeps) {
+  const left = lastKeptMs(previous, keeps);
+  const right = projectSourceMs(word.startMs, keeps);
+  if (left == null || right == null) return word.startMs - previous.endMs;
+  return right - left;
+}
+
+function chunkByOutput(words, gapMs, punctuation, keeps) {
+  const groups = [];
+  let current = [];
+  for (const word of words) {
+    const previous = current.at(-1);
+    if (previous && outputGapMs(previous, word, keeps) >= gapMs) {
+      groups.push(current);
+      current = [];
+    }
+    current.push(word);
+    if (punctuation.test(fold(word.text)) || /[。！？!?]$/.test(word.text)) {
+      groups.push(current);
+      current = [];
+    }
+  }
+  if (current.length) groups.push(current);
+  return groups;
+}
+
+function outputSpanMs(group, keeps) {
+  const start = projectSourceMs(group[0].startMs, keeps);
+  const end = projectSourceMs(Math.max(group[0].startMs, group.at(-1).endMs - 1), keeps);
+  if (start == null || end == null) return group.at(-1).endMs - group[0].startMs;
+  return Math.max(1, end - start);
+}
+
+function sentencesFromGroups(groups, keeps) {
   const sentences = [];
   let previousShot = 'medium';
   let rhythm = 0;
   for (const group of groups) {
-    const duration = group.at(-1).endMs - group[0].startMs;
-    const pieces = duration > 8000 ? chunkWords(group, 280, /[。！？!?，,、；;]$/, 18) : [group];
+    const pieces = outputSpanMs(group, keeps) > 8000 ? chunkByOutput(group, 280, /[。！？!?，,、；;]$/, keeps) : [group];
     for (const piece of pieces) {
-      const span = piece.at(-1).endMs - piece[0].startMs;
+      const span = outputSpanMs(piece, keeps);
       let shot = previousShot;
       if (!(span < 1500 && sentences.length)) {
         rhythm += 1;
@@ -416,15 +473,25 @@ function sentencesFromGroups(groups) {
   return sentences;
 }
 
-export function draftPlan({words = [], removes = [], corrections = [], style} = {}) {
+export function draftPlan({words = [], removes = [], corrections = [], style, clip} = {}) {
   const sorted = prepareWords(words, {removes, corrections}).filter(word => word.endMs > word.startMs).sort((a, b) => a.startMs - b.startMs);
-  const sentences = sentencesFromGroups(chunkWords(sorted, 450, /[。！？!?]$/));
+  const clipEnd = clip?.outSec ?? ((sorted.at(-1)?.endMs ?? 1000) / 1000 + 1);
+  const keeps = keepRanges({inSec: clip?.inSec ?? 0, outSec: clipEnd}, removes);
+  const sentences = sentencesFromGroups(chunkByOutput(sorted, 450, /[。！？!?]$/, keeps), keeps);
+  const distance = (fromMs, toMs) => {
+    const left = projectSourceMs(fromMs, keeps);
+    const right = projectSourceMs(toMs, keeps);
+    return left == null || right == null ? toMs - fromMs : right - left;
+  };
   const chapters = [];
-  sentences.forEach((sentence, index) => {
-    const previous = sentences[index - 1];
-    if (!previous || sentence.startMs - previous.endMs >= 1200) chapters.push({id: `ch${chapters.length + 1}`, title: '', startMs: sentence.startMs});
-    sentence.chapterId = chapters.at(-1)?.id ?? null;
-  });
+  let previousSentence = null;
+  for (const sentence of sentences) {
+    const gap = previousSentence ? distance(Math.max(previousSentence.startMs, previousSentence.endMs - 1), sentence.startMs) : Infinity;
+    const lasted = chapters.at(-1) ? distance(chapters.at(-1).startMs, sentence.startMs) : Infinity;
+    if (!chapters.length || (gap >= 1200 && lasted >= 8000 && chapters.length < 6)) chapters.push({id: `ch${chapters.length + 1}`, title: '', startMs: sentence.startMs});
+    sentence.chapterId = chapters.at(-1).id;
+    previousSentence = sentence;
+  }
   return {style: resolveStyle(style), chapters, sentences};
 }
 
@@ -468,7 +535,7 @@ export function rhythmHints(sentences = []) {
 }
 
 export function subtitlePhrases(words = []) {
-  return chunkWords([...words].sort((a, b) => a.startMs - b.startMs), 280, /[。！？!?，,、；;]$/, 18).map(group => ({
+  return chunkWords([...words].sort((a, b) => a.startMs - b.startMs), 280, /[。！？!?，,、；;]$/).map(group => ({
     text: group.map(word => word.text).join(''),
     startMs: group[0].startMs,
     endMs: group.at(-1).endMs,

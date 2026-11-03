@@ -38,7 +38,8 @@ export function talentScale(shot: string, style?: Partial<PlanStyle>, source?: F
 export function windowRect(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): {x: number; y: number; w: number; h: number};
 export function layoutRects(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): {window: {x: number; y: number; w: number; h: number}; chapter: {x: number; y: number; w: number; h: number}; punch: {x: number; y: number; w: number; h: number}; subtitle: {x: number; y: number; w: number; h: number}};
 export function punchProgress(frame: number, fps: number, atMs: number): number;
-export function prepareWords(words?: PlanWord[], options?: {removes?: {status?: string; startMs: number; endMs: number}[]; corrections?: {status?: string; wordIds?: string[]; after: string}[]}): PlanWord[];
+export function prepareWords(words?: PlanWord[], options?: {removes?: {status?: string; startMs: number; endMs: number; kind?: string}[]; corrections?: {status?: string; wordIds?: string[]; after: string}[]}): PlanWord[];
+export function readFaceBox(value: unknown): {x: number; y: number; w: number; h: number} | null;
 export function faceInFrame(face: {x: number; y: number; w: number; h: number} | null, shot: string, style?: Partial<PlanStyle>): {x: number; y: number; w: number; h: number} | null;
 export function validatePlan(plan: PlanDocument, context?: {words?: PlanWord[]; removes?: {status?: string; startMs: number; endMs: number}[]}): {ok: boolean; plan: PlanDocument; issues: {sentenceId?: string; code: string; message: string}[]};
 export function applyFaceSafe(plan: PlanDocument, faceBox: {x: number; y: number; w: number; h: number} | null, style?: Partial<PlanStyle>): {plan: PlanDocument; issues: {sentenceId?: string; code: string; message: string}[]};

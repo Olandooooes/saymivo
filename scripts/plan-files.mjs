@@ -19,7 +19,7 @@ export function remuxOriginalAudio(rendered, audioSource, output) {
   fs.mkdirSync(path.dirname(output), {recursive: true});
   const result = spawnSync('ffmpeg', [
     '-y', '-i', rendered, '-i', audioSource,
-    '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', '-shortest', output,
+    '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', output,
   ], {encoding: 'utf8'});
   if (result.status !== 0) throw Error((result.stderr || '音轨封装失败').slice(-500));
   return output;

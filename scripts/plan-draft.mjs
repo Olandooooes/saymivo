@@ -1,6 +1,6 @@
 // Draft a sentence plan from words.json and an accepted cutlist.
 import fs from 'node:fs';
-import {draftPlan, presentation} from '../src/plan.mjs';
+import {draftPlan, presentation, readFaceBox} from '../src/plan.mjs';
 import {draftWithLlm} from '../src/plan-llm.mjs';
 
 const llm = process.argv.includes('--llm');
@@ -14,7 +14,7 @@ const cutlist = JSON.parse(fs.readFileSync(cutlistFile, 'utf8'));
 const words = wordsDoc.words ?? wordsDoc;
 const corrections = wordsDoc.corrections ?? [];
 const removes = cutlist.removes ?? [];
-const faceBox = faceFile ? JSON.parse(fs.readFileSync(faceFile, 'utf8')).face ?? JSON.parse(fs.readFileSync(faceFile, 'utf8')) : null;
+const faceBox = faceFile ? readFaceBox(JSON.parse(fs.readFileSync(faceFile, 'utf8'))) : null;
 const clip = {inSec: 0, outSec: (Math.max(...words.map(word => word.endMs), 1000) / 1000) + 1};
 const drafted = llm
   ? await draftWithLlm({words, removes, corrections, faceBox, clip})
