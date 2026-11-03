@@ -17,15 +17,49 @@ export function PlanReview({captions, clipId, removes = [], faceBox = null, src,
   const words = useMemo<Word[]>(() => captions.filter(caption => !clipId || caption.clipId === clipId).flatMap(caption => caption.words.map((word, index) => ({id: `${caption.id}-${index}`, text: word.text, startMs: word.startMs, endMs: word.endMs}))), [captions, clipId]);
   const [plan, setPlan] = useState(() => draftPlan({words, removes}));
   const [currentId, setCurrentId] = useState(plan.sentences[0]?.id ?? '');
-  const [llmReady, setLlmReady] = useState(false);
+  const [llm, setLlm] = useState<{enabled: boolean; model: string | null; message: string}>({enabled: false, model: null, message: ''});
+  const [drafting, setDrafting] = useState(false);
   const [llmNote, setLlmNote] = useState('');
-  useEffect(() => { void fetch('/api/plan/llm').then(async response => response.ok ? response.json() : {enabled: false}).then(data => setLlmReady(Boolean(data.enabled))).catch(() => setLlmReady(false)); }, []);
+  useEffect(() => {
+    void fetch('/api/plan/llm').then(async response => response.ok ? response.json() : {enabled: false}).then(data => setLlm({enabled: Boolean(data.enabled), model: data.model ?? null, message: data.message ?? ''})).catch(() => setLlm({enabled: false, model: null, message: ''}));
+  }, []);
   const askModel = async () => {
-    setLlmNote('正在起草…');
-    const response = await fetch('/api/plan/draft', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({words, removes, faceBox})});
-    const data = await response.json();
-    if (data.plan?.sentences) { setPlan(data.plan); setCurrentId(data.plan.sentences[0]?.id ?? ''); }
-    setLlmNote((data.warnings ?? []).map((item: {message?: string}) => item.message).filter(Boolean).join('；'));
+    setDrafting(true);
+    setLlmNote(llm.model ? `正在用 ${llm.model} 起草…` : '正在起草…');
+    try {
+      const response = await fetch('/api/plan/draft', {method: 'POST', headers: {'Content-Type': 'application/json', Accept: 'application/x-ndjson'}, body: JSON.stringify({words, removes, faceBox})});
+      if (!response.ok || !response.body) throw Error('起草没有返回进度');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const done = {payload: null as {plan?: typeof plan; warnings?: {message?: string}[]; model?: string | null} | null};
+      const take = (line: string) => {
+        if (!line.trim()) return;
+        const event = JSON.parse(line) as {type?: string; status?: string; model?: string; batch?: number; total?: number; plan?: typeof plan; warnings?: {message?: string}[]};
+        if (event.type === 'progress') {
+          const action = event.status === 'retry' ? '失败，正在重试' : event.status === 'fallback' ? '已改用规则底稿' : '正在起草';
+          setLlmNote(`${event.model} · 第 ${event.batch}/${event.total} 批${action}`);
+        } else if (event.type === 'done') done.payload = event;
+      };
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, {stream: true});
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) take(line);
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) take(buffer);
+      const finished = done.payload;
+      if (finished?.plan?.sentences) { setPlan(finished.plan); setCurrentId(finished.plan.sentences[0]?.id ?? ''); }
+      const warnings = (finished?.warnings ?? []).map(item => item.message).filter((message): message is string => Boolean(message));
+      setLlmNote([finished?.model ? `模型 ${finished.model}` : '', ...warnings].join('；'));
+    } catch (error) {
+      setLlmNote(error instanceof Error ? error.message : '起草失败，已保留规则底稿');
+    } finally {
+      setDrafting(false);
+    }
   };
   const clip = {inSec: 0, outSec: (words.at(-1)?.endMs ?? 1000) / 1000 + 1};
   const view = presentation({plan, words, removes, faceBox, clip});
@@ -35,8 +69,8 @@ export function PlanReview({captions, clipId, removes = [], faceBox = null, src,
     <dialog open aria-labelledby="plan-title" className="rounded-xl bg-surface text-on-surface p-5 w-[min(960px,96vw)] max-h-[86vh] overflow-auto">
       <div className="flex justify-between"><h2 id="plan-title" className="font-bold text-lg">分镜审阅</h2><button type="button" onClick={onClose}>关闭</button></div>
       <p className="my-2 text-sm">景别和大字可以改。改完不重新识别，词时间保持原样。预览和导出用同一份投影。</p>
-      {llmReady ? <button type="button" onClick={() => void askModel()}>AI 起草分镜</button> : null}
-      {llmNote ? <p className="text-sm">{llmNote}</p> : null}
+      {llm.enabled ? <button type="button" onClick={() => void askModel()} disabled={drafting}>{drafting ? '正在起草…' : `用 ${llm.model} 起草分镜`}</button> : llm.message ? <p className="text-sm">{llm.message}</p> : null}
+      {llmNote ? <p className="text-sm" role="status">{llmNote}</p> : null}
       {(plan.warnings ?? []).map((item: {code?: string; message?: string; sentenceId?: string}, index: number) => <p key={`${item.sentenceId ?? ''}-${index}`} className="text-sm">{item.message}</p>)}
       {hints.map(hint => <p key={hint.sentenceId + hint.message} className="text-sm">{hint.message}</p>)}
       {view.plan.sentences.filter(sentence => sentence.id === currentId).map(sentence => <Player key={sentence.id} component={PlanPreview} inputProps={{sentence, phrases: view.plan.phrases, style: view.style, src}} durationInFrames={60} compositionWidth={1920} compositionHeight={1080} fps={30} controls style={{width: '100%', aspectRatio: '16/9', background: '#111'}} />)}

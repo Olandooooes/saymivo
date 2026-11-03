@@ -17,6 +17,24 @@
 
 复制或编辑 `.env.example` 对应的本地 `.env`，不要提交密钥。`AUTOBROLL_LANGUAGE=zh`、`AUTOBROLL_DEVICE=cpu`、`AUTOBROLL_FACE_AWARE=0` 适合先跑本地中文流程。`AUTOBROLL_MODEL` 接受模型名称或已下载的 CTranslate2 模型目录，不能直接填任意 PyTorch 权重文件。GPU、额外对齐或人物分析依赖不属于基础安装保证。
 
+## 本地分镜模型（可选）
+
+分镜审阅里的起草默认走本机 [Ollama](https://ollama.com/)，不用付费 API。没有可用模型时按钮会隐藏，分镜仍用规则底稿，并提示安装。
+
+1. 安装 Ollama：打开 <https://ollama.com/download>。macOS 也可以 `brew install ollama`。
+2. 在项目目录运行 `bash scripts/setup-local-llm.sh`。脚本会启动服务并拉取默认模型 `qwen2.5:7b`（只需要一次）。
+3. 启动工作台，打开「分镜审阅」，点「用 qwen2.5:7b 起草分镜」。界面会显示当前模型，以及每一批是在起草、重试，还是改回了规则底稿。
+
+长稿按句分批发给模型，每批大约两分钟上限。某一批失败会再试一次，仍失败就只让这一批回到规则底稿，其它批次保留。
+
+可选环境变量：
+
+| 变量 | 作用 |
+|---|---|
+| `PLAN_LLM_PROVIDER` | `ollama` 或 `openai`。不设置时，有 `OPENAI_API_KEY` 就用它，否则探测 `http://127.0.0.1:11434/v1`。 |
+| `PLAN_LLM_MODEL` | 覆盖模型名。本机默认 `qwen2.5:7b`；走 OpenAI 且未指定时仍是 `gpt-4o-mini`。 |
+| `OLLAMA_BASE_URL` | 本机接口地址，默认 `http://127.0.0.1:11434/v1`。 |
+
 ## 常见问题
 
 - 5188 / 3348 被占用：关闭已有 Saymivo 终端后重试，避免同时启动多份。
