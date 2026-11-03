@@ -94,24 +94,28 @@ export function frameSegments(keeps, fps = 30, rate = null) {
   return segments;
 }
 
-export function filterGraph(keeps, fps, rate = null) {
+export const PORTRAIT_ENHANCE = 'hqdn3d=1.5:1.5:6:6,unsharp=5:5:0.6';
+
+export function filterGraph(keeps, fps, rate = null, {enhance = false} = {}) {
   // Audio PTS already include the container delay. Subtracting audioOffsetMs
   // here trims that delay a second time and the soundtrack lands ~offset late.
   // Video and audio of one piece share the same integer frame span.
+  // Optional denoise/sharpen stays on the video chain so the audio clock is unchanged.
   const segments = frameSegments(keeps, fps, rate);
+  const look = enhance ? `,${PORTRAIT_ENHANCE}` : '';
   const parts = segments.map((segment, index) => {
     const span = segment.durationSec.toFixed(6);
     const open = segment.startSec.toFixed(6);
     const close = segment.endSec.toFixed(6);
     const fade = segment.durationSec > 0.05 ? `,afade=t=in:st=0:d=0.012,afade=t=out:st=${Math.max(0, segment.durationSec - 0.012).toFixed(6)}:d=0.012` : '';
-    return `[0:v]trim=start_frame=${segment.fs}:end_frame=${segment.fe},setpts=PTS-STARTPTS,fps=${fps}[v${index}];` +
+    return `[0:v]trim=start_frame=${segment.fs}:end_frame=${segment.fe},setpts=PTS-STARTPTS,fps=${fps}${look}[v${index}];` +
       `[0:a]atrim=start=${open}:end=${close},asetpts=PTS-STARTPTS${fade},apad=whole_dur=${span},atrim=0:${span}[a${index}]`;
   });
   const concat = segments.map((_, index) => `[v${index}][a${index}]`).join('') + `concat=n=${segments.length}:v=1:a=1[v][a]`;
   return parts.join(';') + ';' + concat;
 }
 
-export function renderFineCut({source, cutlist, clip, output, fps = 30}) {
+export function renderFineCut({source, cutlist, clip, output, fps = 30, enhance = false}) {
   const keeps = keepRanges(clip, cutlist.removes);
   const temporary = output.replace(/\.mp4$/i, '') + '.encoded.mp4';
   fs.mkdirSync(path.dirname(output), {recursive: true});
@@ -119,7 +123,7 @@ export function renderFineCut({source, cutlist, clip, output, fps = 30}) {
   fs.rmSync(output, {force: true});
   const rate = probeFrameRate(source, fps);
   run(ffmpeg(), [
-    '-y', '-i', source, '-filter_complex', filterGraph(keeps, fps, rate),
+    '-y', '-i', source, '-filter_complex', filterGraph(keeps, fps, rate, {enhance}),
     '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
     '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', temporary,
   ]);
@@ -212,7 +216,8 @@ function extractClock(source, wav) {
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (invoked) {
-  const [command, source, wordsFile, outputDir] = process.argv.slice(2);
+  const enhance = process.argv.includes('--enhance');
+  const [command, source, wordsFile, outputDir] = process.argv.slice(2).filter(arg => arg !== '--enhance');
   if (command === 'plan') {
     const wav = path.join(outputDir, 'clock.wav');
     fs.mkdirSync(outputDir, {recursive: true});
@@ -226,7 +231,7 @@ if (invoked) {
   } else if (command === 'render') {
     const cutlist = JSON.parse(fs.readFileSync(wordsFile, 'utf8'));
     const duration = probeDuration(source);
-    const rendered = renderFineCut({source, cutlist, clip: {inSec: 0, outSec: duration}, output: outputDir, fps: cutlist.fps ?? 30});
+    const rendered = renderFineCut({source, cutlist, clip: {inSec: 0, outSec: duration}, output: outputDir, fps: cutlist.fps ?? 30, enhance});
     console.log(JSON.stringify(rendered));
   }
 }

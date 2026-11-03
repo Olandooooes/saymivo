@@ -1,0 +1,53 @@
+export const SHOTS: string[];
+export const SLIDE_KINDS: string[];
+export const PUNCH_SPRING_MS: number;
+export const DEFAULT_STYLE: {
+  talentFraming: 'framed' | 'fullscreen';
+  windowScale: number;
+  shiftWindowScale: number;
+  punchScale: number;
+  fullscreenPunchScale: number;
+  fullscreenShiftScale: number;
+  maxSourceScale: number;
+  maxPunchSourceScale: number;
+};
+
+export type PlanStyle = typeof DEFAULT_STYLE;
+export type PlanWord = {id: string; text: string; startMs: number; endMs: number};
+export type PlanSentence = {
+  id: string;
+  startMs: number;
+  endMs: number;
+  text: string;
+  shot: string;
+  chapterId?: string | null;
+  punch?: {text: string; atMs?: number; atWordId?: string} | null;
+  labels?: {text: string; atMs: number}[];
+  slide?: {kind: string; items: {id?: string; title: string; atWordId?: string; atMs?: number | null; status?: string}[]} | null;
+  pip?: boolean;
+  cta?: boolean;
+  faceConflict?: string;
+  status?: string;
+  timebase?: string;
+};
+export type PlanDocument = {style?: PlanStyle; chapters?: {id: string; title: string; startMs: number; status?: string; sourceStartMs?: number}[]; sentences: PlanSentence[]; phrases?: {text: string; startMs: number; endMs: number}[]; warnings?: {code?: string; message?: string; sentenceId?: string}[]; timebase?: string};
+
+export function resolveStyle(style?: Partial<PlanStyle>): PlanStyle;
+export type FrameSize = {width: number; height: number};
+export function talentScale(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): number;
+export function windowRect(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): {x: number; y: number; w: number; h: number};
+export function layoutRects(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): {window: {x: number; y: number; w: number; h: number}; chapter: {x: number; y: number; w: number; h: number}; punch: {x: number; y: number; w: number; h: number}; subtitle: {x: number; y: number; w: number; h: number}};
+export function punchProgress(frame: number, fps: number, atMs: number): number;
+export function prepareWords(words?: PlanWord[], options?: {removes?: {status?: string; startMs: number; endMs: number; kind?: string}[]; corrections?: {status?: string; wordIds?: string[]; after: string}[]}): PlanWord[];
+export function readFaceBox(value: unknown): {x: number; y: number; w: number; h: number} | null;
+export function faceInFrame(face: {x: number; y: number; w: number; h: number} | null, shot: string, style?: Partial<PlanStyle>): {x: number; y: number; w: number; h: number} | null;
+export function validatePlan(plan: PlanDocument, context?: {words?: PlanWord[]; removes?: {status?: string; startMs: number; endMs: number}[]}): {ok: boolean; plan: PlanDocument; issues: {sentenceId?: string; code: string; message: string}[]};
+export function applyFaceSafe(plan: PlanDocument, faceBox: {x: number; y: number; w: number; h: number} | null, style?: Partial<PlanStyle>): {plan: PlanDocument; issues: {sentenceId?: string; code: string; message: string}[]};
+export function projectPlan(plan: PlanDocument, keeps: number[][], words?: PlanWord[]): PlanDocument;
+export function presentation(input: {plan: PlanDocument; words?: PlanWord[]; removes?: {status?: string; startMs: number; endMs: number}[]; faceBox?: {x: number; y: number; w: number; h: number} | null; clip?: {inSec: number; outSec: number}; style?: Partial<PlanStyle>}): {plan: PlanDocument; keeps: number[][]; style: PlanStyle; issues: {sentenceId?: string; code: string; message: string}[]};
+export function highlightAtMs(item: {status?: string; atMs?: number | null}): number | null;
+export function draftPlan(input?: {words?: PlanWord[]; removes?: {status?: string; startMs: number; endMs: number}[]; corrections?: {status?: string; wordIds?: string[]; after: string}[]; style?: Partial<PlanStyle>}): PlanDocument;
+export function redraftSentence(plan: PlanDocument, words: PlanWord[], sentenceId: string): PlanDocument;
+export function rhythmHints(sentences?: PlanSentence[]): {sentenceId: string; message: string}[];
+export function subtitlePhrases(words?: PlanWord[]): {text: string; startMs: number; endMs: number}[];
+export function frameTalentScales(plan: PlanDocument, style?: Partial<PlanStyle>): {id: string; shot: string; scale: number}[];

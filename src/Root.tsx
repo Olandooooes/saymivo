@@ -2,6 +2,7 @@ import {presentationSize,type Presentation} from './presentation.mjs';
 import React from 'react';
 import {Composition, staticFile} from 'remotion';
 import {MultiClipVideo} from './MultiClipVideo';
+import {PlanPreview, PlanVideo} from './plan-kit/PlanVideo';
 import {totalDurationFrames} from './timeline';
 
 // The editor renders MultiClipVideo via @remotion/player; this composition is
@@ -49,6 +50,31 @@ export const RemotionRoot: React.FC = () => {
         const project=await fetch(staticFile("preview-project.json")).then(r=>{if(!r.ok)throw Error("No local preview project");return r.json();}).catch(()=>({clips:[],captions:[],brolls:[],music:null}));
         return {fps:30,...presentationSize(project.presentation),durationInFrames:Math.max(1,totalDurationFrames(project.clips??[],30)),props:project};
       }}
+    />
+    <Composition
+      id="PlanCut"
+      component={PlanVideo}
+      fps={30}
+      width={1920}
+      height={1080}
+      durationInFrames={60}
+      defaultProps={{plan: {sentences: []}}}
+      calculateMetadata={({props}) => {
+        const given = Number((props as {durationInFrames?: number}).durationInFrames);
+        if (Number.isFinite(given) && given > 0) return {durationInFrames: Math.round(given), props};
+        const sentences = (props.plan as {sentences?: {endMs: number}[]})?.sentences ?? [];
+        const end = sentences.reduce((max, row) => Math.max(max, row.endMs ?? 0), 0);
+        return {durationInFrames: Math.max(1, Math.ceil(end / 1000 * 30)), props};
+      }}
+    />
+    <Composition
+      id="PlanPreview"
+      component={PlanPreview}
+      fps={30}
+      width={1920}
+      height={1080}
+      durationInFrames={60}
+      defaultProps={{sentence: {id: 's', startMs: 0, endMs: 2000, text: '', shot: 'medium'}}}
     />
     </>
   );

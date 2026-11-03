@@ -1,6 +1,8 @@
 import {regenerateCaptions} from '../src/regenerate-captions.mjs';
 import {PauseReviewDialog} from './PauseReviewDialog';
 import {FineCutReview} from './FineCutReview';
+import {PlanReview} from './PlanReview';
+import {readFaceBox} from '../src/plan.mjs';
 import type {AutocutPlan} from '../src/apply-autocut-project.mjs';
 import {validateStoryboard} from '../src/storyboard.mjs';
 import {preExportAudit, type PreExportAdvisory} from '../src/pre-export-audit.mjs';
@@ -347,6 +349,20 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   // Auto-trim leading/trailing silence on every clip (uses cached transcripts).
   const [pauseReview,setPauseReview]=useState<{clips:typeof clips;plan:AutocutPlan;signature:string}|null>(null);
   const [fineCutClip,setFineCutClip]=useState<typeof clips[number]|null>(null);
+  const [planOpen,setPlanOpen]=useState(false);
+  const [storyInputs,setStoryInputs]=useState<{removes:{status?:string;startMs:number;endMs:number;kind?:string}[];face:{x:number;y:number;w:number;h:number}|null}>({removes:[],face:null});
+  useEffect(()=>{
+    if(!planOpen)return;
+    const clip=clips.find(c=>c.id===selectedClipId)??clips[0];
+    if(!clip?.src){setStoryInputs({removes:[],face:null});return;}
+    const stem=clip.src.replace(/\.(mp4|mov|webm)$/i,'');
+    let stop=false;
+    void Promise.all([
+      fetch('/'+stem+'.cutlist.json').then(response=>response.ok?response.json():null).catch(()=>null),
+      fetch('/'+stem+'.face.json').then(response=>response.ok?response.json():null).catch(()=>null),
+    ]).then(([cutlist,face])=>{if(!stop)setStoryInputs({removes:Array.isArray(cutlist?.removes)?cutlist.removes:[],face:readFaceBox(face)});});
+    return ()=>{stop=true;};
+  },[planOpen,selectedClipId,clips]);
   const trimSilence = async () => {
     const signature=JSON.stringify({projectId:useEditor.getState().projectId,clips});
     playerRef.current?.pause();
@@ -601,6 +617,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
             {trimming ? (trimLabel || 'Cutting…') : '剪去停顿'}
           </button>
           <button type="button" onClick={()=>{const chosen=clips.find(c=>c.id===selectedClipId)??clips[0]; if(!chosen)return; playerRef.current?.pause(); setFineCutClip(chosen);}} disabled={!clips.length} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">精剪审阅</button>
+          <button type="button" onClick={()=>{playerRef.current?.pause(); setPlanOpen(true);}} disabled={!clips.length} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">分镜审阅</button>
           <button type="button" onClick={()=>{playerRef.current?.pause();setRetakeOpen(true);}} disabled={!clips.length||exp?.status==='running'||generating||arranging||trimming} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">口播精剪</button>
           <button type="button" onClick={()=>{playerRef.current?.pause();setMotionLibraryOpen(true);}} disabled={exp?.status==='running'} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">动效库</button>
           {exp?.status === 'running' && <span aria-hidden="true" className="text-body-sm text-on-surface-variant">Rendering… {exp.progress ?? 0}%</span>}
@@ -643,6 +660,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
       {settingsOpen&&<Settings onClose={()=>setSettingsOpen(false)}/>}
       {motionLibraryOpen&&<MotionLibrary onClose={()=>setMotionLibraryOpen(false)}/>}
       {fineCutClip&&<FineCutReview clip={fineCutClip} captions={captions} onPause={()=>playerRef.current?.pause()} onClose={()=>setFineCutClip(null)} onApply={result=>{applyFineCut(result);setFineCutClip(null);notify('精剪已放上时间线，可一次撤销恢复。','ok');}}/>}
+      {planOpen&&<PlanReview captions={captions} clipId={(clips.find(c=>c.id===selectedClipId)??clips[0])?.id} src={(clips.find(c=>c.id===selectedClipId)??clips[0])?.src} removes={storyInputs.removes} faceBox={storyInputs.face} onClose={()=>setPlanOpen(false)}/>}
       {pauseReview&&<PauseReviewDialog clips={pauseReview.clips} plan={pauseReview.plan} onPause={()=>playerRef.current?.pause()} onClose={()=>setPauseReview(null)} onApply={plan=>{
         const now=useEditor.getState();
         if(JSON.stringify({projectId:now.projectId,clips:now.clips})!==pauseReview.signature)throw Error('分析后时间线已改变，请关闭并重新分析。');
