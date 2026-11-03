@@ -103,7 +103,7 @@ def get_speech_timestamps(audio,options):
                                  str(output), str(wav)], capture_output=True, text=True, env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
         raw = output / 'delayed.json'
-        self.assertEqual(json.loads(raw.read_text()), [{'word': '测试', 'startMs': 213, 'endMs': 713}])
+        self.assertEqual(json.loads(raw.read_text()), [{'word': '测试', 'startMs': 213, 'endMs': 713, 'spaceBefore': False}])
         metadata = json.loads((output / 'delayed.meta.json').read_text())
         self.assertEqual(metadata['audioClock'], receipt)
         self.assertEqual(metadata['sourceSha256'], sha256_file(source))

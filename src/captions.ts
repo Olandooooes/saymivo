@@ -7,6 +7,8 @@ import {placeClips, type Clip} from './timeline';
 
 export type CaptionWord = {text: string; startMs: number; endMs: number; accent: boolean};
 export type Caption = {
+  protectedPhrases?: string[];
+  styleOverride?: Partial<import('./caption-style.mjs').CaptionStyle>;
   audioClock?: {version:string;timestampBasis:string;sourceSha256:string;wavSha256:string;sampleRate:number;channels:number;sampleWidthBytes:number;[key:string]:unknown};
   timingScope?: 'cue'; // Cue bounds reviewed without inferring internal word onsets.
   reviewOriginalTiming?: {startMs:number;endMs:number;text:string};

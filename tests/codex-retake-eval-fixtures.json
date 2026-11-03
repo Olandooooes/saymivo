@@ -1,0 +1,79 @@
+[
+  {
+    "id": "synthetic-001",
+    "description": "失败起句由后面的完整重说替代",
+    "clauses": [
+      {"clipId": "clip-a", "tokens": ["今天", "我们", "演示", "一个", "测试", "流程。"]},
+      {"clipId": "clip-a", "tokens": ["第一步", "我们", "先", "检查", "一个"]},
+      {"clipId": "clip-a", "tokens": ["第一步", "我们", "先", "检查", "一个", "具体", "功能，", "确认", "输入", "和", "输出。"]},
+      {"clipId": "clip-a", "tokens": ["接着", "再", "保存", "本次", "结果。"]}
+    ],
+    "expectation": {"removeClauses": [1], "replacementClauses": [2], "mustKeepClauses": [0, 2, 3]}
+  },
+  {
+    "id": "synthetic-002",
+    "description": "明确刻意强调的重复必须保留",
+    "clauses": [
+      {"clipId": "clip-a", "tokens": ["现在", "我们", "看", "验证", "步骤。"]},
+      {"clipId": "clip-a", "tokens": ["这个", "步骤", "非常", "重要。"]},
+      {"clipId": "clip-a", "tokens": ["我", "再", "强调", "一次，", "这个", "步骤", "非常", "重要。"]},
+      {"clipId": "clip-a", "tokens": ["因为", "它", "关系到", "后面的", "验证。"]}
+    ],
+    "expectation": {"removeClauses": [], "replacementClauses": [], "mustKeepClauses": [0, 1, 2, 3]}
+  },
+  {
+    "id": "synthetic-003",
+    "description": "数字变化不能自动判断正确版本",
+    "clauses": [
+      {"clipId": "clip-a", "tokens": ["下面", "核对", "检查", "次数。"]},
+      {"clipId": "clip-a", "tokens": ["这个", "方案", "需要", "三次", "检查。"]},
+      {"clipId": "clip-a", "tokens": ["这个", "方案", "需要", "五次", "检查。"]},
+      {"clipId": "clip-a", "tokens": ["检查", "完成", "以后，", "再", "记录", "结果。"]}
+    ],
+    "expectation": {"removeClauses": [], "replacementClauses": [], "mustKeepClauses": [0, 1, 2, 3]}
+  },
+  {
+    "id": "synthetic-004",
+    "description": "否定变化不能自动判断正确版本",
+    "clauses": [
+      {"clipId": "clip-a", "tokens": ["下面", "核对", "操作", "范围。"]},
+      {"clipId": "clip-a", "tokens": ["这个", "操作", "会", "修改", "原文件。"]},
+      {"clipId": "clip-a", "tokens": ["这个", "操作", "不会", "修改", "原文件。"]},
+      {"clipId": "clip-a", "tokens": ["我们", "还要", "检查", "保存", "位置。"]}
+    ],
+    "expectation": {"removeClauses": [], "replacementClauses": [], "mustKeepClauses": [0, 1, 2, 3]}
+  },
+  {
+    "id": "synthetic-005",
+    "description": "重说前的独有信息不能被后段替代",
+    "clauses": [
+      {"clipId": "clip-a", "tokens": ["我们", "开始", "完整", "测试。"]},
+      {"clipId": "clip-a", "tokens": ["先", "检查", "输入，", "还要", "记录", "异常", "样本。"]},
+      {"clipId": "clip-a", "tokens": ["先", "检查", "输入，", "再", "测试", "输出。"]},
+      {"clipId": "clip-a", "tokens": ["最后", "把", "这些", "结果", "一起", "保存。"]}
+    ],
+    "expectation": {"removeClauses": [], "replacementClauses": [], "mustKeepClauses": [0, 1, 2, 3]}
+  },
+  {
+    "id": "synthetic-006",
+    "description": "第一遍完整、后一遍失败时保留第一遍",
+    "clauses": [
+      {"clipId": "clip-a", "tokens": ["现在", "说明", "本次", "测试", "顺序。"]},
+      {"clipId": "clip-a", "tokens": ["我们", "先", "检查", "输入，", "再", "测试", "输出，", "最后", "记录", "异常", "样本。"]},
+      {"clipId": "clip-a", "tokens": ["我们", "先", "检查", "输入，", "再", "测试", "输"]},
+      {"clipId": "clip-a", "tokens": ["接着", "看", "本次", "结果。"]}
+    ],
+    "expectation": {"removeClauses": [2], "replacementClauses": [1], "mustKeepClauses": [0, 1, 3]}
+  },
+  {
+    "id": "synthetic-007",
+    "description": "同一段重录跨两个片段实例仍应识别",
+    "clauses": [
+      {"clipId": "clip-a", "tokens": ["现在", "演示", "结果", "核验。"]},
+      {"clipId": "clip-a", "tokens": ["接下来", "我们", "需要", "先", "检查", "一个"]},
+      {"clipId": "clip-b", "tokens": ["接下来", "我们", "需要", "先", "检查", "一个", "具体", "功能，", "确认", "输出", "没有", "变化。"]},
+      {"clipId": "clip-b", "tokens": ["然后", "保存", "这次", "记录。"]}
+    ],
+    "expectation": {"removeClauses": [1], "replacementClauses": [2], "mustKeepClauses": [0, 2, 3]}
+  }
+]

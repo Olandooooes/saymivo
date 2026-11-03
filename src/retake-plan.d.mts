@@ -1,0 +1,17 @@
+import type {Clip,Music} from './timeline';
+import type {Caption} from './captions';
+import type {BrollItem} from './Broll';
+import type {Presentation} from './presentation.mjs';
+export type RetakeSnapshot=Pick<Clip,'id'|'src'|'inSec'|'outSec'|'speed'|'sourceDurationSec'>;
+export type RetakePart={clipId:string;src:string;startSec:number;endSec:number;text:string};
+export type KeeperCaptionEvidence={version:'verified-keeper-caption-words-v1';candidateId:string;src:string;sourceSha256:string;audioClock:Record<string,unknown>;parts:Array<RetakePart&{first:number;last:number;words:Array<{word:string;startMs:number;endMs:number;sourceIndex:number}>}>;independentRecognitionConfirmed:true;boundariesConfirmed:true;rawRecognitionChanged:false};
+export type RetakeCandidate={id:string;src:string;clipId:string;kind?:'retake'|'false-start'|'filler';remove:{startSec:number;endSec:number;text:string};retain:{startSec:number;endSec:number;text:string;clipId?:string;src?:string}|null;removeParts?:RetakePart[];retainParts?:RetakePart[];keeperCaptionEvidence?:KeeperCaptionEvidence;status:'approved'|'review';confidence:'high'|'review';score:number;method:'local-sequence-alignment'|'gemini-semantic'|'codex-word-decisions';reason:string;evidence:unknown[]};
+export type RetakeAudit={id:string;status:'running'|'done'|'error'|'cancelled';progress?:number;label?:string;error?:string;signalStatus?:string;summary?:Record<string,number>;indexUrl?:string;reportUrl?:string;beforeAudioUrl?:string;afterAudioUrl?:string;result?:{warnings?:string[];listeningPerformed?:boolean}};
+export type RetakeAnalysis={id:string;status:'running'|'done'|'error'|'cancelled';progress?:number;label?:string;error?:string;fillerDiscovery?:{found:number;probed:number;entries:Array<{id:string;word:string;startMs:number;endMs:number;reason:string}>};features?:{independentRecall?:boolean;fillerCleaning?:boolean;residualRecheck?:boolean};residual?:{performed:boolean;rounds:unknown[];newCandidates:number};audit?:RetakeAudit;snapshot:{clips:RetakeSnapshot[]};sources:Array<{src:string;sourceSha256:string;audioClock:Record<string,unknown>}>;candidates:RetakeCandidate[];warnings?:string[];blocked?:Array<{reason:string}>;counts?:{blocked?:number;[key:string]:number|undefined}};
+export type RetakeProject={clips:Clip[];captions:Caption[];brolls:BrollItem[];presentation:Presentation;music:Music;accentColor:string};
+export type RetakeSession={jobId:string;base:RetakeProject;appliedIds:string[];afterSignature:string;retainedClipIds:Record<string,string[]>};
+export type RetakeOptions={candidateIds?:string[];allowReview?:boolean;session?:RetakeSession;fps?:number};
+export type RetakeResult={ok:false;changed:false;error:string}|{ok:true;changed:boolean;project:RetakeProject;appliedIds:string[];session:RetakeSession;warnings?:string[]};
+export function retakeClipSnapshot(clips:Clip[]):RetakeSnapshot[];
+export function applyRetakePlan(project:RetakeProject,analysis:RetakeAnalysis,options?:RetakeOptions):RetakeResult;
+export function retakeSourceFrame(clips:Clip[],retainedIds:string[],sourceSec:number,fps?:number):{frame:number;exact:boolean}|null;

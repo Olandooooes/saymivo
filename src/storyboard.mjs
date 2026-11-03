@@ -1,8 +1,15 @@
 // Source-anchored visual scenes, independent from spoken subtitle pages.
 import {overviewComparisonIssues} from './overview-comparison.mjs';
+import {visualPreset,visualPresetIssues} from './visual-presets.mjs';
 export const sceneLayouts=['speaker','headline','chapter','slide','spotlight','cards','flow','demo','outro','overview','stack','route','gallery'];
 export const sceneLabels={speaker:'真人全屏',headline:'真人与重点大字',chapter:'章节页',slide:'图文讲义',spotlight:'文档聚焦',cards:'对比卡片',flow:'流程图',demo:'操作演示',outro:'总结页',overview:'总览导航与当前节点',stack:'分层纸张展开',route:'分支连线图解',gallery:'多素材总结展示'};
-export function matchingSource(scene,clip){return scene.clipId===clip.id||(scene.src===clip.src&&clip.id.startsWith(scene.clipId+'-'));}
+export function matchingSource(scene,clip){
+ if(scene.clipInstanceId)return scene.clipInstanceId===clip.id&&scene.src===clip.src;
+ // Scenes use original-source seconds, so all retained siblings of that media
+ // must share the scene even when their generated IDs have different branches.
+ // Exact paths keep different uploads isolated; IDs only anchor legacy scenes.
+ return typeof scene.src==='string'&&scene.src.length>0?scene.src===clip.src:scene.clipId===clip.id;
+}
 export function activeStoryboard(scenes=[],ms,clip){return scenes.filter(s=>(!clip||matchingSource(s,clip))&&ms>=s.startMs&&ms<s.endMs).sort((a,b)=>b.startMs-a.startMs)[0];}
 export function projectStoryboard(scenes=[],clips=[],fps=30){
  let offset=0;const out=[];
@@ -19,6 +26,7 @@ export function validateStoryboard(scenes,clips){
   if(!Number.isFinite(s.startMs)||!Number.isFinite(s.endMs)||s.endMs<=s.startMs)issues.push({id:s.id,message:'分镜时间范围无效'});
   if(s.stackStyle!==undefined&&!['cards','folder'].includes(s.stackStyle))issues.push({id:s.id,message:'未知分层展开形式'});
   if(!sceneLayouts.includes(s.layout))issues.push({id:s.id,message:'未知版式'});
+  if(s.visualPreset){if(s.visualPreset.version!==1)issues.push({id:s.id,message:'未知动效预设版本'});for(const message of visualPresetIssues(s,s.visualPreset.id))issues.push({id:s.id,message});}
   if(s.titleTreatment!==undefined&&!['airy','embedded'].includes(s.titleTreatment))issues.push({id:s.id,message:'未知标题画面风格'});
   if(!clips.some(c=>matchingSource(s,c)&&s.endMs>c.inSec*1000&&s.startMs<c.outSec*1000))issues.push({id:s.id,message:'分镜未对应当前时间轴'});
   if(s.media?.src&&/^(?:https?:|file:|\/|.*\.\.)/.test(s.media.src))issues.push({id:s.id,message:'配套素材须位于本地媒体库'});
@@ -77,6 +85,7 @@ export function validateStoryboard(scenes,clips){
 
 export function sceneSpeakerLayout(scene){
  if(!scene)return 'speaker';
+ if(scene.visualPreset)return visualPreset(scene.visualPreset.id)?.speaker??'speaker';
  if(scene.titleTreatment==='embedded')return 'speaker';
  if(scene.titleTreatment==='airy'&&['chapter','headline'].includes(scene.layout)&&(!scene.headlinePosition||scene.headlinePosition==='left'))return 'editorial';
  if(scene.layout==='headline'&&scene.headlinePosition&&scene.headlinePosition!=='left')return 'speaker';

@@ -1,0 +1,15 @@
+import type {Clip} from './timeline';
+import type {Caption} from './captions';
+import type {Presentation} from './presentation.mjs';
+import type {StoryScene} from './storyboard.mjs';
+import type {VisualPresetId} from './visual-presets.mjs';
+export type PlannerState={clips:Clip[];captions:Caption[];presentation:Presentation;meta?:{fps:number;width?:number;height?:number;durationInFrames?:number}|null;brolls?:unknown[];accentColor?:string};
+export type PlanChoice=VisualPresetId|'keep';
+export type PlanCandidate={id:VisualPresetId;score:number;semanticRole:string;automaticAllowed:boolean;reasons:string[];warnings:string[];issues:string[];options:{side:'left'|'right';primaryNodeIds?:string[]};pages:number};
+export type MotionPlanRow={sceneId:string;title:string;sourceStartMs:number;sourceEndMs:number;retainedMs:number;spokenText:string;matchedCaptionIds:string[];signals:{kind:string;label:string;terms:string[];sources:string[]}[];candidates:PlanCandidate[];recommended:VisualPresetId|null;selected:PlanChoice;options:{side?:'left'|'right';primaryNodeIds?:string[]};reasons:string[];baseWarnings:string[];warnings:string[];characters:number;readingWindows:{nodeId:string;characters:number;retainedMs:number}[]};
+export type MotionPlan={version:1;method:'local-semantic-rules';measurement:'provided-font-metrics'|'unmeasured';signature:string;rows:MotionPlanRow[]};
+export function motionPlanSignature(state:PlannerState):string;
+export function sceneSpeechContext(state:PlannerState,scene:StoryScene):{text:string;words:Caption['words'];matchedCaptionIds:string[];warnings:string[];retainedMs:number;clips:Clip[]};
+export function generateMotionPlan(state:PlannerState,options?:{preserveExisting?:boolean;measure?:(text:string,size:number,weight:number)=>{width:number;ascent:number;descent:number}}):MotionPlan;
+export function updateMotionPlanSelection(plan:MotionPlan,sceneId:string,selected:PlanChoice):{ok:true;plan:MotionPlan}|{ok:false;error:string};
+export function applyMotionPlanToStore(store:{getState:()=>PlannerState&{setPresentation:(presentation:Presentation)=>void}},plan:MotionPlan):{ok:true;changed:boolean}|{ok:false;error:string};

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="950" viewBox="0 0 1600 950" role="img">
+<title>这次失败发生在哪里</title>
+<rect width="1600" height="100%" fill="white"/>
+<text x="64" y="89.4" fill="#14243D" font-size="46" font-family="Arial Unicode MS, PingFang SC, sans-serif">这次失败发生在哪里</text>
+<text x="64" y="144.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">复盘示意  制作阶段缺少共同的可观看交付物，局部工作难以汇成满意的成片。</text>
+<text x="64" y="217.9" fill="#087F75" font-size="31" font-family="Arial Unicode MS, PingFang SC, sans-serif">目标中的工作顺序</text>
+<rect x="64" y="246" width="332" height="164" rx="18" fill="#EDF8F5"/>
+<text x="87" y="298.8" fill="#087F75" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">内容剪顺</text>
+<text x="87" y="353.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">完整意思与原声</text>
+<polyline points="404,328 434,328" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="423.4690092573155,333.75310646325045 434,328 423.4690092573155,322.24689353674955" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="444" y="246" width="332" height="164" rx="18" fill="#EDF8F5"/>
+<text x="467" y="298.8" fill="#087F75" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">按口播分镜</text>
+<text x="467" y="353.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">每段有表达目的</text>
+<polyline points="784,328 814,328" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="803.4690092573155,333.75310646325045 814,328 803.4690092573155,322.24689353674955" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="824" y="246" width="332" height="164" rx="18" fill="#EDF8F5"/>
+<text x="847" y="298.8" fill="#087F75" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">参考动效复用</text>
+<text x="847" y="353.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">实际效果逐项验收</text>
+<polyline points="1164,328 1194,328" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1183.4690092573155,333.75310646325045 1194,328 1183.4690092573155,322.24689353674955" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1204" y="246" width="332" height="164" rx="18" fill="#EDF8F5"/>
+<text x="1227" y="298.8" fill="#087F75" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">整片视听检查</text>
+<text x="1227" y="353.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">声音与画面一起看</text>
+<rect x="64" y="447" width="1472" height="87" rx="18" fill="#FFF3DE"/>
+<text x="90" y="499.8" fill="#B46C17" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">缺口：内容定稿、可审分镜、风格样片没有及时串成主线</text>
+<text x="64" y="605.9" fill="#B54138" font-size="31" font-family="Arial Unicode MS, PingFang SC, sans-serif">实际出现的返工路径</text>
+<rect x="64" y="634" width="332" height="164" rx="18" fill="#FFF1EE"/>
+<text x="87" y="686.8" fill="#B54138" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">研究和开发交叉</text>
+<text x="87" y="741.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">同时扩充多个入口</text>
+<polyline points="404,716 434,716" fill="none" stroke="#B54138" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="423.4690092573155,721.7531064632504 434,716 423.4690092573155,710.2468935367496" fill="none" stroke="#B54138" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="444" y="634" width="332" height="164" rx="18" fill="#FFF1EE"/>
+<text x="467" y="686.8" fill="#B54138" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">局部技术验证</text>
+<text x="467" y="741.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">通过范围被放大</text>
+<polyline points="784,716 814,716" fill="none" stroke="#B54138" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="803.4690092573155,721.7531064632504 814,716 803.4690092573155,710.2468935367496" fill="none" stroke="#B54138" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="824" y="634" width="332" height="164" rx="18" fill="#FFF1EE"/>
+<text x="847" y="686.8" fill="#B54138" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">整片继续推进</text>
+<text x="847" y="741.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">风格方向尚待校准</text>
+<polyline points="1164,716 1194,716" fill="none" stroke="#B54138" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1183.4690092573155,721.7531064632504 1194,716 1183.4690092573155,710.2468935367496" fill="none" stroke="#B54138" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1204" y="634" width="332" height="164" rx="18" fill="#FFF1EE"/>
+<text x="1227" y="686.8" fill="#B54138" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">用户要求返工</text>
+<text x="1227" y="741.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">回头补预览与对照</text>
+<text x="64" y="880.1" fill="#52627A" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">后续原则：每一阶段先交出可验收的结果，再决定下一步；已做的补救按实际时间记录。</text>
+</svg>

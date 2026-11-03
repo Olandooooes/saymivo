@@ -11,7 +11,9 @@ const moduleUrl = (source) => 'data:text/javascript;base64,' + Buffer.from(ts.tr
 const timelineUrl = moduleUrl(fs.readFileSync(new URL('../src/timeline.ts', import.meta.url), 'utf8'));
 let source = fs.readFileSync(new URL('../editor/store.ts', import.meta.url), 'utf8');
 for (const [specifier, url] of [
+ ['../src/apply-autocut-project.mjs', new URL('../src/apply-autocut-project.mjs', import.meta.url).href],
   ['../src/edit-caption-words.mjs', new URL('../src/edit-caption-words.mjs', import.meta.url).href],
+  ['../src/split-clip-captions.mjs', new URL('../src/split-clip-captions.mjs', import.meta.url).href],
   ['../src/presentation.mjs', new URL('../src/presentation.mjs', import.meta.url).href],
   ['../src/timeline', timelineUrl],
   ['zustand', import.meta.resolve('zustand')],

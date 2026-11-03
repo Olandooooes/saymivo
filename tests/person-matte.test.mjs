@@ -18,3 +18,8 @@ test('native source timestamps avoid one-frame drift after decoder boundary samp
  assert.equal(personMatteFrame(matte,12603.333).index,2);
  assert.equal(personMatteFrame(matte,12700),null);
 });
+test('an explicit source interval holds the final original matte for its frame duration only',()=>{
+ const matte={prefix:'person/frame-',sourceStartMs:0,fps:30,count:3,timesMs:[0,1000/30,2000/30],endMs:100};
+ assert.equal(personMatteFrame(matte,99).index,2);assert.equal(personMatteFrame(matte,100),null);
+ assert.equal(personMatteFrame({...matte,endMs:10000},101),null,'metadata cannot freeze one matte far beyond its source frame');
+});

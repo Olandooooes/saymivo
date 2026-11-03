@@ -1,4 +1,6 @@
+import {applyAutocutProject} from '../src/apply-autocut-project.mjs';
 import {editCaptionWords} from '../src/edit-caption-words.mjs';
+import {splitClipCaptions} from '../src/split-clip-captions.mjs';
 import {presentationSize,type Presentation} from '../src/presentation.mjs';
 import {create} from 'zustand';
 import type {Caption} from '../src/captions';
@@ -40,6 +42,7 @@ type EditorState = {
   select: (id: string | null) => void;
   setCurrentFrame: (f: number) => void;
   setTopPct: (id: string, topPct: number) => void;
+  setAllCaptionTopPct: (topPct: number) => void;
   setCaptionScale: (id: string, scale: number) => void;
   setCaptionHold: (id: string, holdMs: number) => void;
   setCaptionTiming: (id: string, startMs: number, endMs: number) => void;
@@ -137,7 +140,11 @@ export const useEditor = create<EditorState>((set) => ({
   select: (id) => set({selectedId: id, selectedClipId: null}),
   setCurrentFrame: (f) => set({currentFrame: f}),
 
-  setTopPct: (id, topPct) => set((s) => ({captions: mapCap(s.captions, id, (c) => ({...c, topPct}))})),
+  setTopPct: (id, topPct) => set((s) => ({captions: mapCap(s.captions, id, (c) => (s.presentation.captionStyle||c.styleOverride?{...c,styleOverride:{...c.styleOverride,topPct}}:{...c,topPct}))})),
+  setAllCaptionTopPct: (topPct) => set((s) => {
+    if (!Number.isFinite(topPct) || topPct < 5 || topPct > 92 || (!s.captions.some(c => c.topPct !== topPct||c.styleOverride?.topPct!==undefined&&c.styleOverride.topPct!==topPct)&&(!s.presentation.captionStyle||s.presentation.captionStyle.topPct===topPct))) return s;
+    return {...withHistory(s),...(s.presentation.captionStyle?{presentation:{...s.presentation,captionStyle:{...s.presentation.captionStyle,topPct}}}:{}), captions: s.captions.map(c => ({...c,topPct,...(c.styleOverride?{styleOverride:{...c.styleOverride,topPct}}:{})}))};
+  }),
   setCaptionHold: (id, holdMs) => set((s) => ({captions: mapCap(s.captions, id, (c) => ({...c, holdMs:Math.max(0,Math.min(1000,holdMs))}))})),
   setCaptionTiming: (id, startMs, endMs) => set((s) => {
     const caption=s.captions.find(c=>c.id===id),clip=s.clips.find(c=>c.id===caption?.clipId);
@@ -147,7 +154,7 @@ export const useEditor = create<EditorState>((set) => ({
     return {...withHistory(s),captions:mapCap(s.captions,id,c=>({...c,startMs,endMs,holdMs:0,timingScope:'cue',
       reviewOriginalTiming:c.reviewOriginalTiming??{startMs:c.startMs,endMs:c.endMs,text:c.words.map(w=>w.text).join('')}}))};
   }),
-  setCaptionScale: (id, scale) => set((s) => ({captions: mapCap(s.captions, id, (c) => ({...c, scale}))})),
+  setCaptionScale: (id, scale) => set((s) => ({captions: mapCap(s.captions, id, (c) => (s.presentation.captionStyle||c.styleOverride?{...c,styleOverride:{...c.styleOverride,fontSize:Math.min(110,Math.max(24,(s.presentation.captionStyle?.fontSize??62)*scale))}}:{...c,scale}))})),
   setBrollScale: (id, scale) => set((s) => ({brolls: s.brolls.map((b) => (b.id === id ? {...b, scale} : b))})),
 
   // Proofreading keeps surviving word timestamps and accents; new text uses
@@ -214,7 +221,7 @@ export const useEditor = create<EditorState>((set) => ({
       return {
         ...withHistory(s),
         clips,
-        captions: reanchor(s.captions),
+        captions: splitClipCaptions(s.captions, clip.id, newId, splitMs),
         brolls: reanchor(s.brolls),
         meta: withMeta(s.meta, clips),
         selectedClipId: newId,
@@ -225,38 +232,10 @@ export const useEditor = create<EditorState>((set) => ({
   // removed), re-anchoring captions/b-roll to the right segment. One undo step.
   applyAutocut: (plan) =>
     set((s) => {
-      const byId = new Map(plan.map((p) => [p.id, p.segments]));
-      const newClips: Clip[] = [];
-      const remap: {origId: string; segId: string; inMs: number; outMs: number}[] = [];
-      // ids must stay unique across REPEATED autocuts (re-segmenting "X" must not
-      // mint another "X-c1" when one already exists)
-      const taken = new Set(s.clips.map((c) => c.id));
-      const uniq = (base: string) => {
-        let id = base;
-        let n = 1;
-        while (taken.has(id)) id = `${base}-c${n++}`;
-        taken.add(id);
-        return id;
-      };
-      for (const c of s.clips) {
-        const segs = byId.get(c.id);
-        if (!segs || !segs.length) { newClips.push(c); continue; }
-        segs.forEach((seg, k) => {
-          const id = k === 0 ? c.id : uniq(`${c.id}-c${k}`);
-          newClips.push({...c, id, inSec: seg.inSec, outSec: seg.outSec});
-          remap.push({origId: c.id, segId: id, inMs: seg.inSec * 1000, outMs: seg.outSec * 1000});
-        });
-      }
-      const reanchor = <T extends {clipId?: string; startMs: number}>(items: T[]) =>
-        items.map((it) => {
-          if (!it.clipId) return it;
-          const segs = remap.filter((r) => r.origId === it.clipId);
-          if (!segs.length) return it;
-          const inside = segs.find((r) => it.startMs >= r.inMs && it.startMs < r.outMs);
-          const target = inside ?? segs.reduce((best, r) => (Math.abs(r.inMs - it.startMs) < Math.abs(best.inMs - it.startMs) ? r : best), segs[0]);
-          return {...it, clipId: target.segId};
-        });
-      return {...withHistory(s), clips: newClips, captions: reanchor(s.captions), brolls: reanchor(s.brolls), meta: withMeta(s.meta, newClips)};
+      const project=applyAutocutProject(s,plan,s.meta?.fps??30);
+      if(JSON.stringify(project.clips)===JSON.stringify(s.clips))return s;
+      return {...project,...withHistory(s),meta:withMeta(s.meta,project.clips),selectedId:null,selectedClipId:null,
+        currentFrame:Math.min(s.currentFrame,Math.max(0,totalDurationFrames(project.clips,s.meta?.fps??30)-1))};
     }),
 
   // upsert a keyframe at source-time t (no history — caller pushes once per gesture)

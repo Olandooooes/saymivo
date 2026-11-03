@@ -1,6 +1,10 @@
+import {TalkingMotionLayer} from './TalkingMotionLayer';
+import {DynamicMotionLayer} from './DynamicMotionLayer';
+import {AudioClockPlayback,useAudioClockMixer} from './AudioClockPlayback';
+import {registerAudioClockMediaElement} from './audio-clock-integration.mjs';
 import {emphasisThemeVars} from './emphasis-theme.mjs';
 import {displayFontFamily} from './display-fonts.mjs';
-import {useDisplayFont} from './DisplayFont';
+import {DisplayFontContext,useDisplayFont} from './DisplayFont';
 import {EmbeddedTitle} from './EmbeddedTitle';
 import {ClipFocusWindows} from './ClipFocusWindows';
 import {captionsForVisibleClips} from './clip-focus-windows.mjs';
@@ -10,7 +14,7 @@ import {ReferenceLayer} from './ReferenceLayer';
 import {activeScene,sceneEnvelope,projectScenes} from './reference-motion.mjs';
 import {KnowledgeLayer} from './KnowledgeLayer';
 import {speakerBox,type Presentation} from './presentation.mjs';
-import React from 'react';
+import React,{useRef,useLayoutEffect} from 'react';
 import {AbsoluteFill, Audio, OffthreadVideo, Video, Sequence, staticFile, useVideoConfig, useCurrentFrame, interpolate, getRemotionEnvironment} from 'remotion';
 import {MotionLayer} from './MotionLayer';
 import {CaptionTrack} from './CaptionTrack';
@@ -24,6 +28,7 @@ const easeOutScene=(t:number)=>1-(1-Math.max(0,Math.min(1,t)))**3;
 const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementType; captions: Caption[];presentation?:Presentation;authoredScenes:ReturnType<typeof projectStoryboard>}> = ({clip, durFrames, Comp, captions,presentation,authoredScenes}) => {
   const {fps,width,height} = useVideoConfig();
   const frame = useCurrentFrame(); // relative to this clip's Sequence
+  const audioMixer=useAudioClockMixer();
   const speed = clip.speed ?? 1;
   // keyframe times are source-relative → advance source-time at `speed`
   const {scale:manualScale, x, y} = sampleTransform(clip.transform, clip.inSec + (frame / fps) * speed);
@@ -73,7 +78,8 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
   const drawSpeaker=(box:Record<string,number>,framing:typeof frameStyle,silent=false,opacity=1)=>(
     <div
       data-ab={silent?undefined:`clip:${clip.id}`}
-      style={presentation?.theme==='knowledge'?{position:'absolute',opacity,left:box.left,top:box.top,width:box.width,height:box.height,borderRadius:box.radius,overflow:'hidden',boxShadow:amount>.9&&active?.motion?.layout!=='headline'?'0 14px 55px #0005':undefined}:{position:'absolute', width: inset ? '42%' : '100%', height: inset ? '34%' : '100%', left: inset ? '29%' : 0, top: inset ? '43%' : 0, borderRadius: inset ? 32 : 0, overflow: 'hidden'}}
+      data-audio-original-track={silent?undefined:clip.id}
+      style={presentation?.theme==='knowledge'||authored?.visualPreset?{position:'absolute',opacity,left:box.left,top:box.top,width:box.width,height:box.height,borderRadius:box.radius,overflow:'hidden',boxShadow:amount>.9&&active?.motion?.layout!=='headline'?'0 14px 55px #0005':undefined}:{position:'absolute', width: inset ? '42%' : '100%', height: inset ? '34%' : '100%', left: inset ? '29%' : 0, top: inset ? '43%' : 0, borderRadius: inset ? 32 : 0, overflow: 'hidden'}}
     >
       <div style={{width:'100%',height:'100%',transform:`translateY(${framing.shiftY}%) scale(${scale*framing.scale})`,transformOrigin:'center'}}>
       <Comp
@@ -84,28 +90,32 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
         // span exactly as long as the Sequence — no black tail frame)
         trimAfter={trimBefore + Math.round(durFrames * speed)}
         acceptableTimeShiftInSeconds={0.5}
-        muted={silent || clip.muted || (clip.volume ?? 1) === 0}
-        volume={silent || clip.muted ? 0 : clip.volume ?? 1}
+        muted={audioMixer.forceMuteOriginal || silent || clip.muted || (clip.volume ?? 1) === 0}
+        volume={audioMixer.forceMuteOriginal || silent || clip.muted ? 0 : clip.volume ?? 1}
         style={{width: '100%', height: '100%', objectFit: clip.fit ?? 'cover', objectPosition: `${framing.x-x}% ${framing.y-y}%`}}
       />
-      {authored?.titleTreatment==='embedded'&&<EmbeddedTitle scene={authored} sourceMs={srcMs} width={width} height={height}/>}
+      {authored&&!authored.dynamicMotion&&(authored.visualPreset?authored.visualPreset.id==='person-backdrop':authored.titleTreatment==='embedded')&&<EmbeddedTitle scene={authored} sourceMs={srcMs} width={width} height={height}/>}
       </div>
     </div>
   );
-  return <>{continuousTitleBackdrop&&<AbsoluteFill style={{background:'#f5f3ec'}}/>}{drawSpeaker(box,frameStyle)}<ClipFocusWindows clip={clip} Comp={Comp}/></>;
+  return <>{continuousTitleBackdrop&&<AbsoluteFill style={{background:'#f5f3ec'}}/>}<div style={{position:'absolute',inset:0,opacity:authored?.dynamicMotion?0:1}}>{drawSpeaker(box,frameStyle)}</div>{!authored?.dynamicMotion&&<ClipFocusWindows clip={clip} Comp={Comp}/>}</>;
 };
 
 // Music layer: start offset, volume, optional end fade-out, and optional
 // auto-ducking — the music dips while someone is speaking (speech = caption spans).
 const MusicTrack: React.FC<{music: NonNullable<Music>; totalFrames: number; speech: Array<[number, number]>}> = ({music, totalFrames, speech}) => {
   const {fps} = useVideoConfig();
+  const audioMixer=useAudioClockMixer(),slot=useRef<HTMLSpanElement>(null),audio=useRef<HTMLAudioElement>(null);
+  useLayoutEffect(()=>registerAudioClockMediaElement(slot.current,audio.current),[music.src]);
   const fadeFrames = Math.round((music.fadeOutSec ?? 0) * fps);
   const DUCK_RAMP_MS = 250; // ease the dip in/out
   return (
-    <Audio
+    <span ref={slot} data-audio-music-track="true"><Audio ref={audio}
+      muted={audioMixer.forceMuteMusic}
       src={staticFile(music.src)}
       trimBefore={Math.round((music.startSec ?? 0) * fps)}
       volume={(f) => {
+        if(audioMixer.forceMuteMusic)return 0;
         let v =
           fadeFrames > 0
             ? interpolate(f, [totalFrames - fadeFrames, totalFrames], [music.volume, 0], {
@@ -126,7 +136,7 @@ const MusicTrack: React.FC<{music: NonNullable<Music>; totalFrames: number; spee
         }
         return v;
       }}
-    />
+    /></span>
   );
 };
 
@@ -137,14 +147,17 @@ export const MultiClipVideo: React.FC<{
   brolls?: BrollItem[];
   accentColor?: string;
   presentation?:Presentation;
-}> = ({clips = [], music = null, captions = [], brolls = [], accentColor,presentation}) => {
-  const {fps} = useVideoConfig();
+  brollAssets?:unknown[];
+}> = ({clips = [], music = null, captions = [], brolls = [], accentColor,presentation,brollAssets=[]}) => {
+  const {fps,width,height} = useVideoConfig();
+  const frame=useCurrentFrame();
   useDisplayFont(presentation?.displayFont);
   const placed = placeClips(clips, fps);
   const totalFrames = totalDurationFrames(clips, fps);
   // captions + b-roll are anchored to clips (source-relative) → project to absolute
   const projectedCaptions = projectCaptions(captions, clips, fps);
   const authoredScenes=projectStoryboard(presentation?.scenes,clips,fps);
+  const presetActive=authoredScenes.some(scene=>(scene.visualPreset||scene.dynamicMotion)&&frame/fps*1000>=scene.startMs&&frame/fps*1000<scene.endMs);
   const visualScenes=presentation?.style==='reference'?projectScenes(captions,clips,fps):projectedCaptions;
   const displayCaptions=projectedCaptions.map(c=>authoredScenes.some(s=>s.layout==='headline'&&s.headlinePosition==='split'&&c.startMs>=s.startMs&&c.startMs<s.endMs)?{...c,topPct:86,scale:.62}:c);
   const projectedBrolls = projectBrolls(brolls, clips, fps);
@@ -155,7 +168,7 @@ export const MultiClipVideo: React.FC<{
   const Clip = getRemotionEnvironment().isRendering ? OffthreadVideo : Video;
 
   return (
-    <AbsoluteFill data-video-composition="true" style={{...({...emphasisThemeVars(presentation?.emphasisTheme),'--koubo-display-font':displayFontFamily(presentation?.displayFont),'--koubo-cjk-width':presentation?.displayFont==='smiley'?.82:1} as React.CSSProperties),lineHeight:'normal',background:presentation?.style==='reference'?'linear-gradient(#ffffff0b 1px,transparent 1px),linear-gradient(90deg,#ffffff0b 1px,transparent 1px),radial-gradient(ellipse at 0% 100%,#0d245f,transparent 65%),radial-gradient(ellipse at 100% 0%,var(--koubo-corner-glow),transparent 58%),#080b13':presentation?.theme==='knowledge'?'radial-gradient(ellipse at 0% 100%,#142b63,transparent 70%),radial-gradient(ellipse at 100% 0%,#72381d,transparent 65%),#080b13':'#10180e',backgroundSize:presentation?.style==='reference'?'80px 80px,80px 80px,auto,auto,auto':undefined}}>
+    <DisplayFontContext.Provider value={presentation?.displayFont}><AudioClockPlayback scenes={presentation?.scenes??[]} clips={clips} brollAssets={brollAssets} validationState={{clips,presentation:presentation??null,accentColor,meta:{fps,width,height,durationInFrames:totalFrames},captions,brolls,music,brollAssets}}><AbsoluteFill data-video-composition="true" style={{...({...emphasisThemeVars(presentation?.emphasisTheme),'--koubo-display-font':displayFontFamily(presentation?.displayFont),'--koubo-cjk-width':presentation?.displayFont==='smiley'?.82:1} as React.CSSProperties),lineHeight:'normal',background:presentation?.style==='reference'?'linear-gradient(#ffffff0b 1px,transparent 1px),linear-gradient(90deg,#ffffff0b 1px,transparent 1px),radial-gradient(ellipse at 0% 100%,#0d245f,transparent 65%),radial-gradient(ellipse at 100% 0%,var(--koubo-corner-glow),transparent 58%),#080b13':presentation?.theme==='knowledge'?'radial-gradient(ellipse at 0% 100%,#142b63,transparent 70%),radial-gradient(ellipse at 100% 0%,#72381d,transparent 65%),#080b13':'#10180e',backgroundSize:presentation?.style==='reference'?'80px 80px,80px 80px,auto,auto,auto':undefined}}>
       <style>{'[data-video-composition] * { box-sizing: content-box; }'}</style>
       {presentation?.theme==='knowledge'&&!presentation.scenes?.length&&<KnowledgeLayer captions={visualScenes} presentation={presentation}/>}
       {presentation?.scenes?.length?<StoryboardLayer scenes={authoredScenes}/>:null}
@@ -177,16 +190,18 @@ export const MultiClipVideo: React.FC<{
       {/* B-roll overlay (above clips, below captions) */}
       <BrollLayer items={projectedBrolls} />
 
-      {presentation?.theme!=='knowledge'&&<MotionLayer captions={projectedCaptions} accentColor={accentColor} />}
+      {presentation?.theme!=='knowledge'&&!presetActive&&<MotionLayer captions={projectedCaptions} accentColor={accentColor} />}
 
       {presentation?.style==='reference'&&!presentation.scenes?.length&&<ReferenceLayer captions={visualScenes} presentation={presentation} plane="foreground"/>}
 
       {presentation?.scenes?.length?<StoryboardLayer scenes={authoredScenes} plane="foreground"/>:null}
+      {presentation?.scenes?.some(scene=>scene.dynamicMotion)&&<DynamicMotionLayer scenes={presentation.scenes} clips={clips} presentation={presentation} accentColor={accentColor} meta={{fps,width,height,durationInFrames:totalFrames}} context={{captions,brolls,music,brollAssets}}/>}
       {/* music */}
       {music && <MusicTrack music={music} totalFrames={totalFrames} speech={projectedCaptions.map((c) => [c.startMs, c.endMs])} />}
 
+      {presentation?.talkingMotion?.length?<TalkingMotionLayer cues={presentation.talkingMotion} captions={captions} clips={clips} accentColor={accentColor??'#d8f99a'}/>:null}
       {/* captions, always on top */}
-      <CaptionTrack captions={captionsForVisibleClips(displayCaptions, clips)} accentColor={presentation?.theme==='knowledge'?'#f1ff27':accentColor} reference={presentation?.style==='reference'} minimal={presentation?.scenes?.some(s=>s.titleTreatment==='airy')} />
-    </AbsoluteFill>
+      <CaptionTrack globalStyle={presentation?.captionStyle} captions={captionsForVisibleClips(displayCaptions, clips)} accentColor={presentation?.theme==='knowledge'?'#f1ff27':accentColor} reference={presentation?.style==='reference'} minimal={presentation?.scenes?.some(s=>s.titleTreatment==='airy')} />
+    </AbsoluteFill></AudioClockPlayback></DisplayFontContext.Provider>
   );
 };

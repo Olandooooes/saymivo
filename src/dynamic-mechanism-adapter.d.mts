@@ -1,0 +1,16 @@
+import type {StoryScene} from './storyboard.mjs';
+import type {Clip} from './timeline';
+import type {DynamicMechanismConfig,StageRect} from './dynamic-mechanisms.mjs';
+export type DynamicControlField={key:string;label:string;type:string;readonly?:boolean;fixed?:unknown;source?:string;preserveId?:boolean;min?:number;max?:number;coordinates?:string;subtitleBottom?:number;options?:string[];fields?:DynamicControlField[];itemFields?:DynamicControlField[]};
+export const dynamicMechanismControls:{kind:DynamicMechanismConfig['kind'];label:string;fields:DynamicControlField[];stage:'experimental-independent';automaticAllowed:false;uiAccepted:false}[];
+export type DecodedDynamicAsset={src:string;sha256?:string;kind?:'image'|'video';width?:number;height?:number;status:'unloaded'|'loading'|'ready'|'error'};
+export type DynamicMechanismEnvironment={clips:Clip[];viewport:{width:number;height:number};fps:number;font:{key:string;status:'loading'|'ready'|'error'};sourceIdentity?:{src:string;sha256:string;width:number;height:number};assets?:DecodedDynamicAsset[];appearance?:unknown;matte?:{status:'loading'|'ready'|'error';prefix:string;sourceSha256:string;rgbaVerified:boolean};layoutReview?:{draftKey:string;status:'reviewed';projectionIds:string[];displayedFields:string[];unplaceable?:boolean;missingText?:string[]};safetyReview?:{draftKey:string;status:'reviewed';projectionIds:string[];overlaps?:StageRect[]}};
+export type DynamicMechanismDraft={version:1;sceneId:string;binding:{src:string;clipId:string;startMs:number;endMs:number;instances:{id:string;src:string;inSec:number;outSec:number;speed:number}[]};clock:'scene-source-relative-ms';baseSignature:string;config:DynamicMechanismConfig};
+export function dynamicDraftSignature(scene:StoryScene,environment:DynamicMechanismEnvironment):string;
+export function dynamicDraftKey(draft:DynamicMechanismDraft):string;
+export function dynamicContentInventory(scene:StoryScene):{id:string;text:string}[];
+export function createDynamicMechanismDraft(scene:StoryScene,config:DynamicMechanismConfig,environment:DynamicMechanismEnvironment):DynamicMechanismDraft;
+export function editDynamicMechanismDraft(draft:DynamicMechanismDraft,path:(string|number)[],value:unknown):DynamicMechanismDraft;
+export function bindDynamicScreenshotRegion(draft:DynamicMechanismDraft,scene:StoryScene,asset:DecodedDynamicAsset,focusRegion:{x:number;y:number;width:number;height:number},environment:DynamicMechanismEnvironment):DynamicMechanismDraft;
+export function prepareDynamicMechanismPreview(draft:DynamicMechanismDraft,scene:StoryScene,environment:DynamicMechanismEnvironment):{stage:'experimental-independent';uiAccepted:false;automaticAllowed:false;canApply:false;draftKey:string;previewReadiness:'blocked'|'waiting'|'ready';reviewRequired:boolean;issues:{code:string;severity:'blocked'|'waiting'|'review';message:string}[];requirements:{src:string;nodeId:string|null;kind:string}[];contentInventory:{id:string;text:string}[];projections:StoryScene[];renderProps:{scene:StoryScene;config:DynamicMechanismConfig}};
+export function dynamicPreviewClock(draft:DynamicMechanismDraft,projection:StoryScene,timelineMs:number):{elapsed:number;sourceMs:number;sourceDurationMs:number;visibleDurationMs:number};

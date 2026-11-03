@@ -1,0 +1,12 @@
+import type{ConditionalSetConfig,ConditionalSetContext,ConditionalRect,ConditionalField,ConditionalMeasurement,ConditionalSample}from'./conditional-set.mjs';
+export type ConditionalSetViewConfig=ConditionalSetConfig&{outcomeLabels:{allowed:string;blocked:string};gateViews:{gateId:string;historyRect:ConditionalRect}[];actors:(ConditionalSetConfig['actors'][number]&{useSourceImage?:boolean})[]};
+export type ConditionalViewField=Omit<ConditionalField,'role'>&{role:ConditionalField['role']|'history';eventId?:string;gateId?:string};
+export type ConditionalViewAssets={key:string;items:{src:string;status:'ready'|'waiting'|'blocked'}[]};
+export type ConditionalViewReadiness={status:'ready'|'waiting'|'blocked';issues:string[];canApply:false;uiAccepted:false;needsFaceReview:true};
+export function conditionalSetConditionText(gate:ConditionalSetConfig['gates'][number],config:ConditionalSetViewConfig):string;
+export function conditionalSetViewFields(config:ConditionalSetViewConfig,context:ConditionalSetContext):ConditionalViewField[];
+export function conditionalSetViewKey(config:ConditionalSetViewConfig,context:ConditionalSetContext,fontKey?:string):string;
+export function conditionalSetViewIssues(config:ConditionalSetViewConfig,context:ConditionalSetContext):string[];
+export function conditionalSetViewReadiness(config:ConditionalSetViewConfig,context:ConditionalSetContext,measurement:ConditionalMeasurement|null,assets:ConditionalViewAssets|null):ConditionalViewReadiness;
+export function conditionalSetViewSourceMs(context:ConditionalSetContext,localFrame:number):number;
+export function conditionalSetViewSample(config:ConditionalSetViewConfig,context:ConditionalSetContext,sourceMs:number):ConditionalSample;

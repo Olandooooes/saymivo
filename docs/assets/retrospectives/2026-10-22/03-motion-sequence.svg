@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="940" viewBox="0 0 1600 940" role="img">
+<title>一项动效需要说明完整过程</title>
+<rect width="1600" height="100%" fill="white"/>
+<text x="64" y="89.4" fill="#14243D" font-size="46" font-family="Arial Unicode MS, PingFang SC, sans-serif">一项动效需要说明完整过程</text>
+<text x="64" y="144.2" fill="#52627A" font-size="28" font-family="Arial Unicode MS, PingFang SC, sans-serif">合成示意  用于解释动作规格  不是原片或工作台截图</text>
+<text x="64" y="231.8" fill="#315CC8" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">1  入场</text>
+<rect x="64" y="263" width="350" height="300" rx="16" fill="#EEF2FA"/>
+<circle cx="176" cy="356" r="29.900000000000002" fill="#D59D7A"/>
+<rect x="135.7" y="393.7" width="80.60000000000001" height="93.60000000000001" rx="19" fill="#315CC8"/>
+<rect x="269" y="345" width="123" height="130" rx="8" fill="white" stroke="#A9BDD7" stroke-width="2"/>
+<rect x="284" y="360" width="93" height="17" rx="3" fill="#B6C9EF"/>
+<polyline points="285,394 374,394" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="285,417 374,417" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="285,440 374,440" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="276,499 341,499" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="330.4690092573155,504.75310646325045 341,499 330.4690092573155,493.24689353674955" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64" y="635.1" fill="#14243D" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">资料从小到大出现</text>
+<text x="64" y="692.1" fill="#52627A" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">真人保持讲解主体</text>
+<text x="438" y="231.8" fill="#315CC8" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">2  运动与交接</text>
+<rect x="438" y="263" width="350" height="300" rx="16" fill="#EEF2FA"/>
+<rect x="458" y="298" width="225" height="181" rx="8" fill="white" stroke="#A9BDD7" stroke-width="2"/>
+<rect x="473" y="313" width="195" height="17" rx="3" fill="#B6C9EF"/>
+<polyline points="474,347 665,347" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="474,370 665,370" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="474,393 665,393" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="736" cy="441" r="15.41" fill="#D59D7A"/>
+<rect x="715.23" y="460.43" width="41.54" height="48.24" rx="19" fill="#315CC8"/>
+<polyline points="648,516 731,516" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="720.4690092573155,521.7531064632504 731,516 720.4690092573155,510.24689353674955" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="438" y="635.1" fill="#14243D" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">人物缩小移到侧边</text>
+<text x="438" y="692.1" fill="#52627A" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">资料成为画面焦点</text>
+<text x="812" y="231.8" fill="#315CC8" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">3  停留可读</text>
+<rect x="812" y="263" width="350" height="300" rx="16" fill="#EEF2FA"/>
+<rect x="832" y="298" width="225" height="181" rx="8" fill="white" stroke="#A9BDD7" stroke-width="2"/>
+<rect x="847" y="313" width="195" height="17" rx="3" fill="#B6C9EF"/>
+<polyline points="848,347 1039,347" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="848,370 1039,370" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="848,393 1039,393" fill="none" stroke="#AAB7C9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="841" y="366" width="207" height="33" rx="4" fill="#D8F2E7" stroke="#087F75" stroke-width="2"/>
+<circle cx="1110" cy="441" r="15.41" fill="#D59D7A"/>
+<rect x="1089.23" y="460.43" width="41.54" height="48.24" rx="19" fill="#315CC8"/>
+<polyline points="852,523 1036,523" fill="none" stroke="#087F75" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="812" y="635.1" fill="#14243D" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">框出当前相关区域</text>
+<text x="812" y="692.1" fill="#52627A" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">保留足够阅读时间</text>
+<text x="1186" y="231.8" fill="#315CC8" font-size="32" font-family="Arial Unicode MS, PingFang SC, sans-serif">4  退场与衔接</text>
+<rect x="1186" y="263" width="350" height="300" rx="16" fill="#EEF2FA"/>
+<circle cx="1363" cy="353" r="29.900000000000002" fill="#D59D7A"/>
+<rect x="1322.7" y="390.7" width="80.60000000000001" height="93.60000000000001" rx="19" fill="#315CC8"/>
+<polyline points="1215,495 1286,495" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1275.4690092573155,500.75310646325045 1286,495 1275.4690092573155,489.24689353674955" fill="none" stroke="#087F75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1186" y="635.1" fill="#14243D" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">资料退出，人物回归</text>
+<text x="1186" y="692.1" fill="#52627A" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">交给下一段表达</text>
+<rect x="64" y="769" width="1472" height="104" rx="18" fill="#EDF8F5"/>
+<text x="90" y="816.1" fill="#087F75" font-size="29" font-family="Arial Unicode MS, PingFang SC, sans-serif">规格还要记录触发口述、层级、位置、大小、路径、时长和退出条件。静态构图只覆盖其中一个时刻。</text>
+</svg>

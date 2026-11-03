@@ -1,3 +1,4 @@
+import {contextualProposals} from './proofread-context.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {pinyin} from 'pinyin-pro';
@@ -5,7 +6,7 @@ import {pinyin} from 'pinyin-pro';
 const defaults=[
  {term:'齐民要术',aliases:['亲民要素','齐民要素','齐民要数'],context:/当代|生活|农书|古籍|how\s*to\s*live\s*better/i},
  {term:'HowToLiveBetter',aliases:['how to live better']},
- ...['FDE','ChatGPT','OpenAI','GitHub','Remotion','Whisper'].map(term=>({term,aliases:[]})),
+ ...['Agent','Notion','FDE','ChatGPT','OpenAI','GitHub','Remotion','Whisper'].map(term=>({term,aliases:[Array.from(term).join(' ')]})),
 ];
 export function parseGlossary(text=''){
  if(typeof text!=='string'||text.length>10000)throw Error('术语词库最多 10000 字');
@@ -19,7 +20,7 @@ const sound=s=>pinyin(s,{toneType:'none',type:'array'}).join('').toLowerCase().r
 const similar=(a,b)=>{const x=sound(a),y=sound(b);return distance(x,y)/Math.max(x.length,y.length,1);};
 const escape=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 function flatten(captions){
- const groups=new Map();captions.forEach((cap,ci)=>{const id=cap.clipId??'absolute';const g=groups.get(id)??{id,units:[],text:''};
+ const groups=new Map();captions.forEach((cap,ci)=>{const id=cap.clipId??'absolute';const g=groups.get(id)??{id,units:[],text:'',sourceSha256:cap.audioClock?.sourceSha256};
  cap.words.forEach((w,wi)=>{const letters=chars(w.text);letters.forEach((text,k)=>g.units.push({text,ci,key:`${ci}:${wi}`,original:w,startMs:w.startMs+(w.endMs-w.startMs)*k/letters.length,endMs:w.startMs+(w.endMs-w.startMs)*(k+1)/letters.length}));});groups.set(id,g);});
  for(const g of groups.values())g.text=g.units.map(u=>u.text).join('');return groups;
 }
@@ -29,7 +30,10 @@ function localCandidates(groups,glossary){
   for(const term of [...defaults,...parseGlossary(glossary)]){
    if(term.context&&!term.context.test(g.text))continue;
    const add=(at,before,reason)=>{if(term.context&&!term.context.test(g.units.slice(Math.max(0,at-80),at+chars(before).length+80).map(u=>u.text).join('')))return;if(before!==term.term)out.push({clipId:g.id,at,before,after:term.term,reason,confidence:1,method:'local'});};
-   if(/^[A-Za-z][A-Za-z0-9 ]+$/.test(term.term))for(const m of matches(g.text,term.term,true))add(m.at,m.before,'统一英文术语写法');
+   if(/^[A-Za-z][A-Za-z0-9 ]+$/.test(term.term)){
+    const pattern=Array.from(term.term.replace(/\s/g,'')).map(escape).join('\\s*');
+    for(const m of g.text.matchAll(new RegExp('(?<![A-Za-z0-9])'+pattern+'(?![A-Za-z0-9])','gi')))add(chars(g.text.slice(0,m.index)).length,m[0],'统一已知英文术语的大小写和内部空格');
+   }
    for(const alias of term.aliases)for(const m of matches(g.text,alias,/^[A-Za-z]/.test(alias)))add(m.at,m.before,term.personal?'个人词库别名':'术语别名与上下文匹配');
    if(/^[\u4e00-\u9fff]{3,12}$/.test(term.term)){
     const n=chars(term.term).length;for(let at=0;at<=g.units.length-n;at++){
@@ -60,33 +64,35 @@ export function applyCorrections(captions,proposals){
   if(e.at==null){const found=matches(g.text,e.before);if(found.length!==1){review.push({...e,reason:'原句不唯一，需人工确认'});continue;}e.at=found[0].at;}
   const n=chars(e.before).length,range=g.units.slice(e.at,e.at+n);
   if(!Number.isInteger(e.at)||e.at<0||range.map(u=>u.text).join('')!==e.before)continue;
+  e.startMs=range[0].original.startMs;e.endMs=range.at(-1).original.endMs;
   if(e.method==='local'&&proposals.some(other=>other.method==='local'&&other.clipId===e.clipId&&other.at===e.at&&other.before===e.before&&other.after!==e.after))reason='词库存在多个同音候选，保留原文';
   else if(protectedContent(e.before,e.after))reason='涉及数字或否定含义，保留原文';
   else if(!Number.isFinite(e.confidence)||e.confidence<.95)reason='把握不足，保留原文';
   else if(e.method!=='local'&&similar(e.before,e.after)>.28)reason='与原声文字差异较大，保留原文';
   else if(chars(e.after).length>n*1.5||chars(e.after).length<n*.6)reason='改写幅度较大，保留原文';
-  else if(range.some((u,i)=>i&&u.startMs-range[i-1].endMs>600))reason='跨越较长停顿，保留原文';
+  else if(e.before.toLowerCase()!==e.after.toLowerCase()&&range.some((u,i)=>i&&u.startMs-range[i-1].endMs>600))reason='跨越较长停顿，保留原文';
+  else if(n!==chars(e.after).length&&((g.units[e.at-1]?.key===range[0].key)||(g.units[e.at+n]?.key===range.at(-1).key)))reason='长度变化触及原词内部，保留原文';
   else if(range[0].ci!==range.at(-1).ci&&n!==chars(e.after).length)reason='跨字幕页长度变化，保留原文';
   if(reason){review.push({...e,reason});continue;}
   const ranges=occupied.get(g.id)??[];const conflict=ranges.find(r=>e.at<r.at+r.n&&e.at+n>r.at);
   if(conflict){if(conflict.before===e.before&&conflict.after===e.after)continue;review.push({...e,reason:'与另一修改重叠，需人工确认'});continue;}
-  const record={...e,startMs:range[0].startMs,endMs:range.at(-1).endMs,n};accepted.push(record);ranges.push(record);occupied.set(g.id,ranges);
+  const record={...e,startMs:range[0].original.startMs,endMs:range.at(-1).original.endMs,n};accepted.push(record);ranges.push(record);occupied.set(g.id,ranges);
  }
  const output=captions.map(c=>({...c,words:[]}));
  for(const g of groups.values()){
   let units=[...g.units];for(const e of accepted.filter(e=>e.clipId===g.id).sort((a,b)=>b.at-a.at)){
    const old=units.slice(e.at,e.at+e.n),letters=chars(e.after);const repl=letters.map((text,k)=>{
     const u=old[Math.min(old.length-1,Math.floor(k*old.length/letters.length))];
-    if(letters.length===old.length)return {...u,text,key:`edit:${e.at}:${k}`};
-    const startMs=e.startMs+(e.endMs-e.startMs)*k/letters.length,endMs=e.startMs+(e.endMs-e.startMs)*(k+1)/letters.length;return {...u,text,startMs,endMs,key:`edit:${e.at}:${k}`};
+    if(letters.length===old.length)return {...u,text,startMs:u.original.startMs,endMs:u.original.endMs,key:u.key};
+    return {...u,text,startMs:e.startMs,endMs:e.endMs,key:`edit:${e.at}`};
    });units.splice(e.at,e.n,...repl);
   }
-  let previous;for(const u of units){const cap=output[u.ci];if(previous?.key===u.key&&previous.ci===u.ci){cap.words.at(-1).text+=u.text;cap.words.at(-1).endMs=u.endMs;}else cap.words.push({...u.original,text:u.text,startMs:u.startMs,endMs:u.endMs});previous=u;}
+  let previous;for(const u of units){const cap=output[u.ci];if(previous?.key===u.key&&previous.ci===u.ci){cap.words.at(-1).text+=u.text;cap.words.at(-1).endMs=Math.max(cap.words.at(-1).endMs,u.original.endMs,u.endMs);}else cap.words.push({...u.original,text:u.text,startMs:Math.min(u.original.startMs,u.startMs),endMs:Math.max(u.original.endMs,u.endMs)});previous=u;}
  }
  return {captions:output,changes:accepted.map(({n,...e})=>e),review};
 }
-export async function proofreadCaptions(captions,{glossary='',mode='local',model,signal}={}){
- const groups=flatten(captions),proposals=localCandidates(groups,glossary),warnings=[];
+export async function proofreadCaptions(captions,{glossary='',mode='local',model,signal,audioEvidence=[]}={}){
+ const groups=flatten(captions),proposals=[...localCandidates(groups,glossary),...contextualProposals(groups,audioEvidence)],warnings=[];
  if(mode==='gemini'){
   try{
    if(!model)throw Error('未配置模型');
@@ -103,13 +109,22 @@ export async function proofreadCaptions(captions,{glossary='',mode='local',model
  // Unknown foreign terms are review hints, never automatic spelling repairs.
  const known=new Set([...defaults,...parseGlossary(glossary)].flatMap(t=>[t.term,...t.aliases]).concat(['AI','Agent','skill','skills']).map(t=>t.replace(/\s/g,'').toLowerCase()));
  const flagged=new Set();
- for(const g of flatten(result.captions).values())for(const m of g.text.matchAll(/[A-Za-z][A-Za-z0-9]{3,23}/g)){
+ for(const g of flatten(result.captions).values()){
+ const fullNames=[];
+ for(const m of g.text.matchAll(/(?:全称(?:是|为)?|全征式|英文名(?:是|为)?)[\s，,:：]*([A-Za-z][A-Za-z ]{3,70})/g)){
+  const term=m[1].trim(),index=m.index+m[0].indexOf(m[1]),at=chars(g.text.slice(0,index)).length,range=g.units.slice(at,at+term.length);
+  if(!range.length)continue;fullNames.push([index,index+term.length]);
+  result.review.push({kind:'unverified-full-name',clipId:g.id,at,before:term,startMs:range[0].original.startMs,endMs:range.at(-1).original.endMs,method:'local',reason:'仅规范已转写全称的大小写；拼写尚无外部术语依据，保留待核验'});
+ }
+ for(const m of g.text.matchAll(/[A-Za-z][A-Za-z0-9]{3,23}/g)){
+  if(fullNames.some(([a,b])=>m.index>=a&&m.index<b))continue;
   const term=m[0],key=g.id+':'+term.toLowerCase();
   if(known.has(term.toLowerCase())||flagged.has(key)||!/[\u4e00-\u9fff]/.test(g.text.slice(Math.max(0,m.index-20),m.index+term.length+20)))continue;
   if(!/^[A-Z][a-z0-9]+$/.test(term))continue;
   const at=chars(g.text.slice(0,m.index)).length,range=g.units.slice(at,at+term.length);
   if(!range.length||result.review.length>=100)continue;
-  flagged.add(key);result.review.push({kind:'unverified-term',clipId:g.id,at,before:term,startMs:range[0].startMs,endMs:range.at(-1).endMs,method:'local',reason:'外文词尚未在术语表中核验，已保留原文；这不表示识别一定有误'});
+  flagged.add(key);result.review.push({kind:'unverified-term',clipId:g.id,at,before:term,startMs:range[0].original.startMs,endMs:range.at(-1).original.endMs,method:'local',reason:'外文词尚未在术语表中核验，已保留原文；这不表示识别一定有误'});
+ }
  }
  return {...result,mode,warnings};
 }

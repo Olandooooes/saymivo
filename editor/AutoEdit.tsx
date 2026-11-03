@@ -3,7 +3,7 @@ import React,{useEffect,useState} from 'react';
 import {displayFontConfig} from '../src/display-fonts.mjs';
 export function useAutoEdit(){
  const [template,setTemplate]=useState(()=>localStorage.getItem('koubo-template')||'reference'),[format,setFormat]=useState(()=>localStorage.getItem('koubo-format')||'landscape');
- const [delivery,setDelivery]=useState(()=>localStorage.getItem('koubo-auto-delivery')==='storyboard'?'storyboard':'video');
+ const [delivery,setDelivery]=useState(()=>localStorage.getItem('koubo-auto-delivery')==='video'?'video':'storyboard');
  const [adaptTextLayout,setAdaptTextLayout]=useState(()=>localStorage.getItem('koubo-adapt-text-layout')!=='0');
  const [reuseReviewedEdits,setReuseReviewedEdits]=useState(()=>localStorage.getItem('koubo-reuse-edits')!=='0');
  const [motionPace,setMotionPace]=useState(()=>localStorage.getItem('koubo-motion-pace')||'balanced');

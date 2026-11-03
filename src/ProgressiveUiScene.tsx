@@ -1,0 +1,56 @@
+import React,{useCallback,useContext,useLayoutEffect,useState} from 'react';
+import {AbsoluteFill,Img,staticFile,useVideoConfig} from 'remotion';
+import type {StoryScene} from './storyboard.mjs';
+import {MeasuredText,useMeasuredText} from './MeasuredText';
+import {StableNumberText} from './StableNumberText';
+import {dynamicSceneDuration,counterMeasurementSpec,type StageRect} from './dynamic-mechanisms.mjs';
+import type {TextFit} from './text-fit.mjs';
+import {DisplayFontContext} from './DisplayFont';
+import {useStableGlyphLayout,type StableGlyphLayout} from './StableGlyphLayout';
+import {sourceTokenExposure,sourceTokenPageState} from './source-token-transfer.mjs';
+import {progressiveUiState,progressivePageState,progressiveLayoutKey,progressiveFieldPlan,progressiveNumberPlan,progressivePresentationIssues,progressivePresentationReadiness,progressiveWritingHold,type ProgressiveUiConfig,type ProgressiveConfig,type ProgressiveField,type ProgressiveNumber} from './progressive-scenes.mjs';
+
+export function RevealedMeasuredText({text,width,height,elapsed,writeMs,minFont,maxFont}:{text:string;width:number;height:number;elapsed:number;writeMs:number;minFont:number;maxFont:number}){
+ const {fit,family}=useMeasuredText(text,width,height,{minFont,maxFont});if(!fit)return null;
+ const state=progressivePageState(fit.pages,elapsed,writeMs),glyphs=(text:string)=>[...new Intl.Segmenter('zh-CN',{granularity:'grapheme'}).segment(text)].map(item=>item.segment);
+ return <div data-progressive-complete-text={text} data-writing-page={state.pageIndex} data-layout-error={fit.unplaceable||state.insufficientDuration?'full-text-needs-more-space-or-time':undefined} style={{position:'relative',width,height,fontFamily:family,fontSize:fit.fontSize,lineHeight:`${fit.rowHeight}px`,color:'#e3f0ff'}}>{fit.pages.map((lines,page)=>{let count=0;return <div key={page} aria-hidden={page!==state.pageIndex} style={{position:'absolute',inset:0,opacity:page===state.pageIndex?1:0,whiteSpace:'pre'}}>{lines.map((line,index)=><div key={index}>{glyphs(line).map((glyph,column)=>{const at=count++;return <span key={column} data-full-glyph={glyph} style={{opacity:at<state.revealedGlyphs?1:0}}>{glyph}</span>;})}</div>)}</div>;})}</div>;
+}
+
+export type ProgressivePreviewReadiness={status:'waiting'|'blocked'|'ready';issues:string[];canApply:false;uiAccepted:false;needsFaceReview:true};
+type FieldReport={id:string;text:string;fit:TextFit|null;family:string};
+type NumberReport={id:string;specKey:string;fit:StableGlyphLayout|null};
+const px=(r:StageRect,w:number,h:number,origin?:StageRect)=>({left:(r.x-(origin?.x??0))*w,top:(r.y-(origin?.y??0))*h,width:r.width*w,height:r.height*h});
+function MeasureField({field,onReport}:{field:ProgressiveField;onReport:(m:FieldReport)=>void}){
+ const {width,height}=useVideoConfig(),{fit,family}=useMeasuredText(field.text,field.rect.width*width,field.rect.height*height,{minFont:height*(field.role==='copy'?.032:.021),maxFont:height*(field.role==='copy'?.067:.043),protectedPhrases:field.text.match(/[A-Za-z0-9]+(?:['’_-][A-Za-z0-9]+)*/g)??[]});
+ useLayoutEffect(()=>onReport({id:field.id,text:field.text,fit,family}),[field.id,field.text,fit,family,onReport]);return null;
+}
+function MeasureNumber({number,onReport}:{number:ProgressiveNumber;onReport:(m:NumberReport)=>void}){
+ const {width,height}=useVideoConfig(),spec=counterMeasurementSpec({kind:'number-counter',from:number.from,to:number.to,unit:number.unit}),fit=useStableGlyphLayout({glyphs:spec.glyphs,slots:spec.numericSlots,unit:spec.unit,samples:spec.samples,width:number.rect.width*width,height:number.rect.height*height,minFont:height*.020,maxFont:height*.043,weight:700}),specKey=JSON.stringify(number);
+ useLayoutEffect(()=>onReport({id:number.id,specKey,fit}),[number.id,specKey,fit,onReport]);return null;
+}
+export function usePreparedProgressive(scene:StoryScene,config:ProgressiveConfig,elapsed:number){
+ const {width,height}=useVideoConfig(),font=useContext(DisplayFontContext),fontKey=font??'none',key=progressiveLayoutKey(scene,config,{width,height},fontKey),fields=progressiveFieldPlan(scene,config,{width,height}),numbers=progressiveNumberPlan(scene,config,{width,height});
+ const [reports,setReports]=useState<{key:string;fields:Record<string,FieldReport>;numbers:Record<string,NumberReport>}>({key:'',fields:{},numbers:{}});
+ const reportField=useCallback((m:FieldReport)=>setReports(prev=>{const current=prev.key===key?prev:{key,fields:{},numbers:{}};return JSON.stringify(current.fields[m.id])===JSON.stringify(m)?prev:{...current,fields:{...current.fields,[m.id]:m}};}),[key]);
+ const reportNumber=useCallback((m:NumberReport)=>setReports(prev=>{const current=prev.key===key?prev:{key,fields:{},numbers:{}};return JSON.stringify(current.numbers[m.id])===JSON.stringify(m)?prev:{...current,numbers:{...current.numbers,[m.id]:m}};}),[key]);
+ const current=reports.key===key?reports:{key,fields:{},numbers:{}},measurement={key,fontKey,fields:Object.values(current.fields),numbers:Object.values(current.numbers).filter(n=>n.fit).map(n=>({id:n.id,specKey:n.specKey,unplaceable:n.fit!.unplaceable}))},readiness=progressivePresentationReadiness(scene,config,measurement,{width,height}),valid=Number.isFinite(elapsed)&&elapsed>=0&&elapsed<dynamicSceneDuration(scene),status=valid?readiness.status:'blocked',issues=valid?readiness.issues:[...readiness.issues,'原场相位超出有效源时段'],copy=config.copyWindow!,copyActive=elapsed>=copy.atMs&&elapsed<copy.endMs;
+ return {width,height,current,fields,numbers,status,issues,ready:status==='ready',copyActive,exposure:sourceTokenExposure(scene),measurements:<>{fields.map(f=><MeasureField key={f.id} field={f} onReport={reportField}/>)}{numbers.map(n=><MeasureNumber key={n.id} number={n} onReport={reportNumber}/>)}</>};
+}
+export function ProgressiveFieldPlane({field,report,elapsed,exposure,force=false,opacity=1,origin}:{field:ProgressiveField;report:FieldReport;elapsed:number;exposure:{speed:number};force?:boolean;opacity?:number;origin?:StageRect}){
+ const {width,height}=useVideoConfig(),fit=report?.fit;if(!fit)return null;const writing=field.role==='writing',hold=progressiveWritingHold(fit,exposure),state=writing?progressivePageState(fit.pages,elapsed-field.atMs,field.writeMs!,hold):sourceTokenPageState(fit.pages,elapsed,field),page=writing?(state as ReturnType<typeof progressivePageState>).pageIndex:(state as ReturnType<typeof sourceTokenPageState>).index,visible=force||elapsed>=field.atMs&&elapsed<field.endMs;
+ if(!visible)return null;return <div data-progressive-complete-text={field.text} data-progressive-field={field.id} data-writing-page={page} style={{position:'absolute',...px(field.rect,width,height,origin),fontFamily:report.family,fontSize:fit.fontSize,lineHeight:`${fit.rowHeight}px`,color:'#e3f0ff',opacity,whiteSpace:'pre',zIndex:2}}>{fit.pages.map((lines,index)=>{let count=0;return <div key={index} data-progressive-page={index} aria-hidden={index!==page} style={{position:'absolute',inset:0,opacity:index===page?1:0}}>{lines.map((line,row)=><div key={row}>{writing?Array.from(new Intl.Segmenter('zh-CN',{granularity:'grapheme'}).segment(line)).map(({segment},i)=>{const n=count++;return <span key={i} style={{opacity:n<(state as ReturnType<typeof progressivePageState>).revealedGlyphs?1:0}}>{segment}</span>;}):line||'\u00a0'}</div>)}</div>;})}</div>;
+}
+export function ProgressiveNumberPlane({number,report,text,origin}:{number:ProgressiveNumber;report:NumberReport;text:string;origin?:StageRect}){
+ const {width,height}=useVideoConfig(),fit=report?.fit;if(!fit)return null;const spec=counterMeasurementSpec({kind:'number-counter',from:number.from,to:number.to,unit:number.unit}),glyphs=Array.from(text),slots=Array.from({length:Math.max(0,spec.numericSlots-glyphs.length)},()=> ' ').concat(glyphs);
+ return <div data-stable-number={text} style={{position:'absolute',...px(number.rect,width,height,origin),fontFamily:fit.family,fontSize:fit.fontSize,fontWeight:700,lineHeight:`${fit.rowHeight}px`,whiteSpace:'pre',color:'#e3f0ff',zIndex:2}}>{slots.map((c,i)=><span key={i} style={{display:'inline-block',width:fit.advance,textAlign:'center'}}>{c}</span>)}{spec.unit&&<span style={{display:'inline-block',width:fit.unitWidth,paddingLeft:fit.fontSize*.22,boxSizing:'border-box'}}>{spec.unit}</span>}</div>;
+}
+function PreparedProgressiveUi({scene,config,elapsed,onReadiness}:{scene:StoryScene;config:ProgressiveUiConfig;elapsed:number;onReadiness?:(r:ProgressivePreviewReadiness)=>void}){
+ const p=usePreparedProgressive(scene,config,elapsed),state=progressiveUiState(scene,config,elapsed,{width:p.width,height:p.height}),issueKey=JSON.stringify(p.issues);
+ useLayoutEffect(()=>{onReadiness?.({status:p.status,issues:JSON.parse(issueKey),canApply:false,uiAccepted:false,needsFaceReview:true});},[p.status,issueKey,onReadiness]);
+ const paint=(id:string,force=false,opacity=1)=>{const f=p.fields.find(f=>f.id===id);return f?<ProgressiveFieldPlane field={f} report={p.current.fields[id]} elapsed={elapsed} exposure={p.exposure} force={force} opacity={opacity}/>:null;};
+ return <AbsoluteFill data-experimental-mechanism="progressive-ui" data-layout-status={p.status} data-mechanism-unavailable={p.status==='blocked'?p.issues.join('；'):undefined} style={{pointerEvents:'none'}}>{p.measurements}{p.ready&&(p.copyActive?paint('complete-copy'):<>{paint('title')}{state.elements.map(e=>{const w=e.rect.width*p.width,h=e.rect.height*p.height,pad=p.height*.012,label=e.role==='progress'?h*.45:e.role==='image'?h*.35:h-pad*2,n=p.numbers.find(n=>n.id===e.id);return <React.Fragment key={e.id}><div data-ui-element={e.id} data-ui-focus={e.focus} style={{position:'absolute',...px(e.rect,p.width,p.height),opacity:e.opacity,boxSizing:'border-box',border:`${1+e.focus*2}px solid ${e.focus>.01?'#94dcff':'#a5bed74d'}`,borderRadius:14,background:'#142a43e8'}}>{e.role==='progress'&&<div style={{position:'absolute',left:pad,top:label+pad,width:w*.70,height:Math.max(8,h*.12),borderRadius:10,background:'#7eb1da25',overflow:'hidden'}}><div data-ui-progress={e.value} style={{height:'100%',width:`${(e.value??0)*100}%`,background:'#93d8ff'}}/></div>}{e.role==='image'&&<Img src={staticFile(e.node.assetSrc!)} style={{position:'absolute',left:pad,top:pad+label,width:w-pad*2,height:h-label-pad*2,objectFit:'contain'}}/>}</div>{paint('element:'+e.id,elapsed>=e.atMs,e.opacity)}{e.questionAtMs!==undefined&&paint('question:'+e.id,elapsed>=e.questionAtMs,e.questionOpacity)}{n&&elapsed>=e.fillAtMs&&<ProgressiveNumberPlane number={n} report={p.current.numbers[n.id]} text={String(Math.round((e.value??0)*100))}/>}</React.Fragment>;})}</>)}</AbsoluteFill>;
+}
+export function ProgressiveUiScene({scene,config,elapsed,onReadiness}:{scene:StoryScene;config:ProgressiveUiConfig;elapsed:number;onReadiness?:(r:ProgressivePreviewReadiness)=>void}){
+ const viewport=useVideoConfig(),issues=progressivePresentationIssues(scene,config,viewport),key=JSON.stringify(issues);useLayoutEffect(()=>{if(issues.length)onReadiness?.({status:'blocked',issues:JSON.parse(key),canApply:false,uiAccepted:false,needsFaceReview:true});},[key,onReadiness]);
+ return issues.length?<AbsoluteFill data-layout-status="blocked" data-mechanism-unavailable={issues.join('；')}/>:<PreparedProgressiveUi scene={scene} config={config} elapsed={elapsed} onReadiness={onReadiness}/>;
+}

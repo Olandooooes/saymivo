@@ -1,3 +1,6 @@
+import {exportRate as validateExportRate,applyExportSpeed} from './export-speed.mjs';
+import {createDynamicMatteAssets} from './dynamic-matte-assets.mjs';
+import {readHttpBody as body} from './http-body.mjs';
 import {visualReviewRoute} from './visual-review-routes.mjs';
 import {autoMediaLibraryRoute} from './auto-media-library.mjs';
 import {captionReviewRoute} from './caption-review-routes.mjs';
@@ -5,6 +8,12 @@ import {captionTimingReviewRoute} from './caption-timing-review-routes.mjs';
 import {validateStoryboard} from '../src/storyboard.mjs';
 import {missingSceneAssets} from './scene-assets.mjs';
 import {createAutoEditor} from './auto-edit.mjs';
+import {createRetakeAnalyzer,installRetakeShutdown} from './retake-routes.mjs';
+import {createPersonMatteAnalyzer} from './person-matte-routes.mjs';
+import {createDynamicAssetRoute} from './dynamic-asset-routes.mjs';
+import {createDynamicAudioRoute} from './dynamic-audio-routes.mjs';
+import {verifyDynamicMotionsForExport,verifyAudioClockMotionsForSave} from './dynamic-motion-export.mjs';
+import {createExportAudioFinalizer,finishRenderedExportAudio} from './export-audio-finalize.mjs';
 // Editor backend (port 3333):
 //   projects   — multi-project library (list/get/save/delete)
 //   add-clip   — upload video → remux/encode + thumbnail → return clip
@@ -39,19 +48,13 @@ const EXPORTS = path.join(PUBLIC, 'exports');
 const PROJECTS_DIR = path.join(PUBLIC, 'projects');
 fs.mkdirSync(EXPORTS, {recursive: true});
 fs.mkdirSync(PROJECTS_DIR, {recursive: true});
+const exportAudioFinalizer=createExportAudioFinalizer({ROOT,EXPORTS});
 
 const renders = {}; // jobId -> {status, progress, file, error}
 const captionJobs = {}; // jobId -> {status, progress, label, error}
 const brollJobs = {}; // jobId -> {status, progress, label, error}
 const arrangeJobs = {}; // jobId -> {status, progress, label, error}
 const trimJobs = {}; // jobId -> {status, progress, label, error}
-
-const body = (req) =>
-  new Promise((res) => {
-    let d = '';
-    req.on('data', (c) => (d += c));
-    req.on('end', () => res(d));
-  });
 
 const json = (res, code, obj) => {
   res.writeHead(code, {'Content-Type': 'application/json'});
@@ -149,15 +152,27 @@ async function localizeRemoteBrolls(props) {
   }
 }
 
-const autoEditor = createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile,isManualBusy:()=>[renders,captionJobs,brollJobs,arrangeJobs,trimJobs].some(store=>Object.values(store).some(j=>j.status==='running'))});
+const manualBusy=()=>[renders,captionJobs,brollJobs,arrangeJobs,trimJobs].some(store=>Object.values(store).some(j=>j.status==='running'));
+let retakeAnalyzer,personMatteAnalyzer;
+const autoEditor = createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile,isManualBusy:()=>manualBusy()||Boolean(retakeAnalyzer?.busy())||Boolean(personMatteAnalyzer?.busy())});
+retakeAnalyzer=createRetakeAnalyzer({ROOT,PUBLIC,json,body,readEnvFile,isBusy:()=>manualBusy()||autoEditor.busy()||Boolean(personMatteAnalyzer?.busy())});
+personMatteAnalyzer=createPersonMatteAnalyzer({ROOT,PUBLIC,json,body,isBusy:()=>manualBusy()||autoEditor.busy()||retakeAnalyzer.busy()});
+const dynamicAssets=createDynamicAssetRoute({ROOT,PUBLIC,json});
+const dynamicMattes=createDynamicMatteAssets({ROOT,PUBLIC,json,inspectSource:src=>dynamicAssets.inspect(src)});
+const dynamicAudio=createDynamicAudioRoute({ROOT,PUBLIC,json});
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (await dynamicAssets.route(req,res,url)) return;
+  if (await dynamicMattes.route(req,res,url)) return;
+  if (await dynamicAudio.route(req,res,url)) return;
+  if (await retakeAnalyzer.route(req,res,url)) return;
+  if (await personMatteAnalyzer.route(req,res,url)) return;
   if (await autoEditor.route(req,res,url)) return;
   if (await captionReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await captionTimingReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await visualReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await autoMediaLibraryRoute({req,res,url,ROOT,PUBLIC,json,body,run})) return;
-  if (req.method==='POST' && (JOBS[url.pathname] || url.pathname==='/api/render') && autoEditor.busy()) return json(res,409,{error:'一键剪辑正在进行，请完成后再操作。'});
+  if (req.method==='POST' && (JOBS[url.pathname] || url.pathname==='/api/render') && (autoEditor.busy()||retakeAnalyzer.busy()||personMatteAnalyzer.busy())) return json(res,409,{error:'本地分析或一键剪辑正在进行，请完成后再操作。'});
   if (await studioRoute({req,res,url,ROOT,PUBLIC,PROJECTS_DIR,json,body,run,readEnvFile})) return;
 
   if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, await health());
@@ -208,6 +223,7 @@ const server = createServer(async (req, res) => {
         /* corrupt previous file — overwrite */
       }
       const now = new Date().toISOString();
+      try{await verifyAudioClockMotionsForSave(incoming,src=>dynamicAssets.inspect(src),{materializeAudio:(src,range)=>dynamicAudio.materialize(src,range),inspectMatte:request=>dynamicMattes.inspect(request)});}catch(error){return json(res,400,{error:error instanceof Error?error.message:'A/B音源需要重新预览'});}
       const saved = {...incoming, createdAt: prev.createdAt || now, updatedAt: now};
       fs.writeFileSync(file, JSON.stringify(saved, null, 2));
       return json(res, 200, {ok: true, updatedAt: now});
@@ -425,13 +441,16 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/render') {
     let raw = await body(req); // {clips, music, captions, brolls, accentColor, draft?}
     let draft = false;
+    let outputRate = 1;
     try {
       const props = JSON.parse(raw);
+      outputRate = validateExportRate(props.exportRate);
       if (!Array.isArray(props.clips) || !props.clips.length) return json(res,400,{error:"请先导入视频再导出"});
       const sceneIssues=validateStoryboard(props.presentation?.scenes,props.clips);
       if(sceneIssues.length)return json(res,400,{error:'请先检查分镜：'+sceneIssues[0].message});
       const missing=missingSceneAssets(props.presentation?.scenes,PUBLIC);
       if(missing.length)return json(res,400,{error:missing[0].message});
+      await verifyDynamicMotionsForExport(props,src=>dynamicAssets.inspect(src),{materializeAudio:(src,range)=>dynamicAudio.materialize(src,range),inspectMatte:request=>dynamicMattes.inspect(request)});
       draft = !!props.draft;
       // Remote (Pexels) B-roll is fetched by headless Chrome during the render and
       // that fetch was failing mid-way on big files. Download every remote asset
@@ -440,7 +459,7 @@ const server = createServer(async (req, res) => {
       raw = JSON.stringify(props);
     } catch (e) {
       console.error('render: could not prepare props:', e);
-      return json(res,400,{error:'导出参数或素材无效，请检查工程后重试。'});
+      return json(res,400,{error:e instanceof Error?e.message:'导出参数或素材无效，请检查工程后重试。'});
     }
     const id = String(Date.now());
     const propsFile = path.join(ROOT, `.props-${id}.json`);
@@ -463,21 +482,33 @@ const server = createServer(async (req, res) => {
       `--offthreadvideo-cache-size-in-bytes=${cacheBytes}`,
       ...(draft ? ['--scale=0.5'] : []),
     ];
+    // Private producer receipt, bound to the exact installed encoder/config and
+    // job props before starting. It cannot be supplied by a project or request.
+    const audioFinalizeProof=await exportAudioFinalizer.captureRender({args,outFile,propsFile});
     const child = spawn('npx', args, {cwd: ROOT});
     child.on('error', (e) => { renders[id] = {status: 'error', error: e.message}; });
     let errTail = ''; // keep the tail of output so failures show a real message
     const onProgress = (d) => {
       const s = String(d);
       const m = s.match(/Rendered\s+(\d+)\/(\d+)/);
-      if (m) renders[id].progress = Math.round((+m[1] / +m[2]) * 100);
+      if (m) renders[id].progress = Math.min(99,Math.round((+m[1] / +m[2]) * 100));
       errTail = (errTail + s).slice(-2000);
     };
     child.stdout.on('data', onProgress);
     child.stderr.on('data', onProgress);
-    child.on('close', (code) => {
-      fs.rmSync(propsFile, {force: true});
-      if (code === 0) renders[id] = {status: 'done', progress: 100, file: `/exports/${outName}`};
-      else {
+    child.on('close', async (code) => {
+      if (code === 0) {
+        try{
+          let state=await finishRenderedExportAudio({finalizer:exportAudioFinalizer,proof:audioFinalizeProof,onState:state=>{if(state.status!=='done'||outputRate===1)renders[id]=state;}});
+          if(state.status==='done'&&outputRate!==1){
+            renders[id]={status:'running',progress:99,label:'正在应用导出倍速'};
+            try{state=await applyExportSpeed({ROOT,EXPORTS,state,rate:outputRate});renders[id]=state;}
+            catch(error){renders[id]={status:'error',error:error.message};}
+          }
+          if(state.status==='error')console.error(`render ${id} audio finalization failed: ${state.error}`);
+        }finally{fs.rmSync(propsFile,{force:true});}
+      } else {
+        fs.rmSync(propsFile, {force: true});
         const line = errTail.split('\n').reverse().find((l) => /error|Error/.test(l))?.trim().slice(0, 200);
         console.error(`render ${id} failed:\n${errTail.slice(-1200)}`);
         renders[id] = {status: 'error', error: line || `render exited ${code}`};
@@ -498,3 +529,4 @@ process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e))
 process.on('uncaughtException', (e) => console.error('uncaughtException:', e));
 
 server.listen(3348, '127.0.0.1', () => console.log('口播工坊 backend → http://127.0.0.1:3348'));
+installRetakeShutdown({server,analyzer:retakeAnalyzer});

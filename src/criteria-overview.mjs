@@ -8,7 +8,7 @@ export function attachCriteriaOverviews(scenes=[]){
   return {...scene,layout:'overview',overviewMode:'preview',overviewSourceSceneId:next.id,
    title:count===3?'三项判断，先看总览':'两项判断，先看总览',label:'口述结构 · 总览',
    sourceNote:'预览随后原话中的判断，未新增结论',sourceCaptionIds:[...new Set([...(scene.sourceCaptionIds??[]),...(next.sourceCaptionIds??[])])],
-   nodes:next.nodes.map((node,i)=>({id:`${scene.id}-overview-${i+1}`,text:node.text.match(/任务|结果|出错/)?.[0]??node.text,
+   nodes:next.nodes.map((node,i)=>({id:`${scene.id}-overview-${i+1}`,text:node.text,
     detail:node.text+(node.detail?'，'+node.detail:''),atMs:i*550}))};
  });
 }

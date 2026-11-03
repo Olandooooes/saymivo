@@ -17,7 +17,7 @@ export type BrollItem = {
 };
 
 // the creator's own B-roll source (pool the generator can pick from)
-export type BrollAsset = {id: string; src: string; kind: 'video' | 'image'; label: string; thumb?: string;width?:number;height?:number;durationSec?:number};
+export type BrollAsset = {keywords?:string[];id: string; src: string; kind: 'video' | 'image'; label: string; thumb?: string;width?:number;height?:number;durationSec?:number};
 
 // remote (Pexels) URLs load directly; local paths go through staticFile
 const resolveSrc = (s: string) => (/^https?:\/\//.test(s) ? s : staticFile(s));

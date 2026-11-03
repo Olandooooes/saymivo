@@ -36,7 +36,7 @@ def main():
             word_timestamps=True, vad_filter=True, beam_size=5, condition_on_previous_text=False,
             initial_prompt=os.environ.get('AUTOBROLL_PROMPT', '普通话口播，准确识别中文和英文术语。'))
         words = [{'word': w.word.strip(), 'startMs': round(w.start * 1000),
-                  'endMs': round(w.end * 1000)} for segment in segments
+                  'endMs': round(w.end * 1000), 'spaceBefore': bool(w.word[:1].isspace())} for segment in segments
                  for w in segment.words or [] if w.word.strip()]
         content = json.dumps(words, ensure_ascii=False)
         metadata = {'engine': 'faster-whisper', 'recognizerVersion': 'faster-whisper-v3',

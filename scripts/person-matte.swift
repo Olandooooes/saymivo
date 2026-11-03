@@ -13,19 +13,22 @@ let input=URL(fileURLWithPath:args[1]),dest=URL(fileURLWithPath:args[2])
 try FileManager.default.createDirectory(at:dest,withIntermediateDirectories:true)
 let asset=AVURLAsset(url:input)
 guard let track=asset.tracks(withMediaType:.video).first else {fatalError("No video track")}
+let origin=track.timeRange.start
 let reader=try AVAssetReader(asset:asset)
 let output=AVAssetReaderTrackOutput(track:track,outputSettings:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA])
 output.alwaysCopiesSampleData=false
 reader.add(output)
-reader.timeRange=CMTimeRange(start:CMTime(value:Int64(first),timescale:fps),duration:CMTime(value:Int64(count),timescale:fps))
-guard reader.startReading() else {fatalError("Cannot read source")}
+reader.timeRange=CMTimeRange(start:CMTimeAdd(origin,CMTime(value:Int64(first),timescale:fps)),duration:CMTime(value:Int64(count+1),timescale:fps))
+guard reader.startReading() else {fatalError("Cannot read source: \(String(describing:reader.error))")}
 let request=VNGeneratePersonSegmentationRequest()
 request.qualityLevel = .accurate
 request.outputPixelFormat=kCVPixelFormatType_OneComponent8
-request.usesCPUOnly=true
-let context=CIContext(options:[.useSoftwareRenderer:true])
+// Vision chooses the available local Apple compute device. No image, face or
+// voice is synthesized and no network service is used.
+request.usesCPUOnly=false
+let context=CIContext()
 let space=CGColorSpace(name:CGColorSpace.sRGB)!
-var timestamps:[Double]=[]
+var timestamps:[Double]=[],coverage:[Double]=[]
 while timestamps.count<count, let sample=output.copyNextSampleBuffer(){
  try autoreleasepool {
   guard let pixel=CMSampleBufferGetImageBuffer(sample) else {fatalError("Missing decoded frame")}
@@ -35,13 +38,19 @@ while timestamps.count<count, let sample=output.copyNextSampleBuffer(){
   let scaled=matte.transformed(by:CGAffineTransform(scaleX:source.extent.width/matte.extent.width,y:source.extent.height/matte.extent.height))
   let clear=CIImage(color:.clear).cropped(to:source.extent)
   let person=source.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:clear,kCIInputMaskImageKey:scaled])
+  let average=scaled.applyingFilter("CIAreaAverage",parameters:[kCIInputExtentKey:CIVector(cgRect:scaled.extent)])
+  var averagePixel=[UInt8](repeating:0,count:4)
+  context.render(average,toBitmap:&averagePixel,rowBytes:4,bounds:CGRect(x:0,y:0,width:1,height:1),format:.RGBA8,colorSpace:space)
+  coverage.append(Double(averagePixel[0])/255)
   let target=dest.appendingPathComponent(String(format:"frame-%05d.png",timestamps.count))
   try context.writePNGRepresentation(of:person,to:target,format:.RGBA8,colorSpace:space)
-  timestamps.append(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample)))
+  timestamps.append(CMTimeGetSeconds(CMTimeSubtract(CMSampleBufferGetPresentationTimeStamp(sample),origin)))
+  print("PROGRESS:\(Double(timestamps.count)/Double(count)):\(timestamps.count)/\(count) 人物帧")
+  fflush(stdout)
  }
 }
 guard timestamps.count==count else {fatalError("Incomplete source decode: \(timestamps.count) / \(count), \(String(describing:reader.error))")}
 reader.cancelReading()
-let report:[String:Any]=["input":input.path,"directory":dest.path,"firstFrame":first,"count":count,"fps":fps,"sourceTimestamps":timestamps,"method":"Local Apple Vision accurate person segmentation, original RGB plus alpha; no generated face or voice."]
+let report:[String:Any]=["input":input.path,"directory":dest.path,"firstFrame":first,"count":count,"fps":fps,"sourceOriginSec":CMTimeGetSeconds(origin),"sourceTimestamps":timestamps,"alphaCoverage":coverage,"method":"Local Apple Vision accurate person segmentation, original RGB plus alpha; no generated face or voice."]
 try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:args[6]))
 print("Wrote \(timestamps.count) source-aligned person frames")

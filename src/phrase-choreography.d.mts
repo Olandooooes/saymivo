@@ -1,0 +1,15 @@
+import type {StoryScene,SceneNode} from './storyboard.mjs';
+import type {StageRect} from './dynamic-mechanisms.mjs';
+import type {DynamicControlField} from './dynamic-mechanism-adapter.mjs';
+export type PhraseKind='emphasis-phrase'|'caret-phrase'|'cumulative-phrases'|'identity-sweep';
+export type PhraseItem={nodeId:string;rect:StageRect;atMs:number;endMs:number;entryMs?:number;exitMs?:number;fromScale?:number;fromTrackingEm?:number;color?:string;extrusion?:boolean};
+export type PhraseChoreographyConfig={kind:PhraseKind;items:PhraseItem[];copyWindow?:{atMs:number;endMs:number;rect:StageRect};protectedAreas?:{rect:StageRect;label?:string}[]};
+export const phraseKinds:PhraseKind[];
+export function phraseSourceItems(scene:StoryScene,config:PhraseChoreographyConfig):(PhraseItem&{node:SceneNode;text:string})[];
+export function phraseAdditionalCopy(scene:StoryScene,config:PhraseChoreographyConfig):{id:string;text:string}[];
+export function phraseChoreographyIssues(scene:StoryScene,config:PhraseChoreographyConfig,viewport?:{width:number;height:number}):string[];
+export function phraseMotionEnvelope(config:PhraseChoreographyConfig,item:PhraseItem,viewport?:{width:number;height:number}):StageRect;
+export function phraseTextReadiness(fit:{pages:string[][];unplaceable?:boolean}|null,clock:{atMs:number;endMs:number;caret?:boolean},exposure?:{startMs:number;endMs:number;speed:number}):{status:'waiting'|'blocked'|'ready';issues:string[]};
+export function phraseChoreographyState(scene:StoryScene,config:PhraseChoreographyConfig,elapsed:number):{kind:PhraseKind;items:(PhraseItem&{node:SceneNode;text:string;opacity:number;scale:number;trackingEm:number;visible:boolean;localMs:number;durationMs:number;readAtMs:number;readMs:number;sweepProgress:number;phase:string})[];additionalCopy:{id:string;text:string}[];automaticAllowed:false;sourceClock:string;issues:string[]};
+export function phrasePageState(pages:string[][],localMs:number,readMs:number,options?:{caret?:boolean}):{pageIndex:number;pageMs:number;lines:string[];glyphCount:number;revealedGlyphs:number;insufficientDuration:boolean;holdMs:number;writeMs:number;caretVisible:boolean};
+export const phraseChoreographyControls:{kind:PhraseKind;label:string;stage:string;automaticAllowed:boolean;uiAccepted:boolean;fields:DynamicControlField[]}[];
