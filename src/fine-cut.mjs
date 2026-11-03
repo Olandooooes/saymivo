@@ -191,24 +191,67 @@ export function mergeIntervals(groups) {
   return merged;
 }
 
+const plain = text => String(text ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
 function shortFalseStarts(words) {
   const sorted = words.filter(word => word.text && word.endMs > word.startMs).sort((a, b) => a.startMs - b.startMs);
   const found = [];
   for (let index = 0; index < sorted.length - 1; index++) {
     const current = sorted[index];
     const next = sorted[index + 1];
-    const head = current.text.replace(/[，,。！？、\s]/g, '');
-    const body = next.text.replace(/[，,。！？、\s]/g, '');
+    const head = plain(current.text);
+    const body = plain(next.text);
     const gap = next.startMs - current.endMs;
     if (head.length >= 2 && head.length <= 8 && body.startsWith(head) && gap < 900 && gap > -200) {
       const endMs = Math.min(current.endMs, next.startMs);
-      if (endMs - current.startMs >= 80) found.push({startMs: current.startMs, endMs, earlier: current.text, later: next.text, merged: false});
+      if (endMs - current.startMs >= 80) found.push({startMs: current.startMs, endMs, earlier: current.text, later: next.text, insideWord: false});
     }
   }
-  for (const word of sorted) {
-    const match = word.text.match(/^(从一个[，,])(.+)$/);
-    if (!match || word.endMs - word.startMs < 400) continue;
-    found.push({startMs: word.startMs, endMs: word.endMs, earlier: match[1], later: match[2], merged: true});
+  return found;
+}
+
+function windowLevels(samples, sampleRate, startSample, endSample) {
+  const win = Math.max(1, Math.round(0.02 * sampleRate));
+  const levels = [];
+  const stop = Math.min(samples.length, endSample);
+  for (let index = Math.max(0, startSample); index + win <= stop; index += win) {
+    let energy = 0;
+    for (let offset = 0; offset < win; offset++) {
+      const value = samples[index + offset] / 32768;
+      energy += value * value;
+    }
+    levels.push({startSec: index / sampleRate, endSec: (index + win) / sampleRate, rms: Math.sqrt(energy / win)});
+  }
+  return levels;
+}
+
+// Whisper often stretches one token across a breath. The dip is measured,
+// not inferred from a particular sentence.
+export function energyGapsInsideWords(words, samples, sampleRate) {
+  if (!samples || !sampleRate) return [];
+  const found = [];
+  for (const word of words) {
+    const chars = Math.max(1, plain(word.text).length);
+    const spanSec = (word.endMs - word.startMs) / 1000;
+    const levels = windowLevels(samples, sampleRate, Math.floor(word.startMs / 1000 * sampleRate), Math.ceil(word.endMs / 1000 * sampleRate));
+    const audible = levels.map(level => level.rms).filter(value => value > 1e-5).sort((a, b) => a - b);
+    if (audible.length < 6) continue;
+    const loud = audible[Math.floor(audible.length * 0.75)];
+    const gate = loud * 10 ** (-10 / 20);
+    let run = null;
+    const runs = [];
+    for (const level of levels) {
+      if (level.rms < gate) {
+        if (!run) run = {startSec: level.startSec, endSec: level.endSec};
+        else run.endSec = level.endSec;
+      } else if (run) { runs.push(run); run = null; }
+    }
+    if (run) runs.push(run);
+    for (const region of runs) {
+      const duration = region.endSec - region.startSec;
+      if (duration < 0.12) continue;
+      found.push({...region, duration, word, msPerChar: spanSec / chars * 1000});
+    }
   }
   return found;
 }
@@ -224,15 +267,28 @@ function removalFromSegments(clip, segments) {
   return rows;
 }
 
-const ROLL_SEC = 0.08;
+function firstKeptWord(candidate, speech) {
+  const matched = candidate.matchedCharacters ?? plain(candidate.earlier?.text).length;
+  let seen = 0;
+  for (const id of candidate.earlier?.wordIds ?? []) {
+    const word = speech[id];
+    if (!word) continue;
+    if (seen >= matched && plain(word.text).length) return word;
+    seen += plain(word.text).length;
+  }
+  const retain = candidate.retain?.startSec;
+  if (retain == null) return null;
+  return speech.find(word => word.startMs / 1000 >= retain - 0.001) ?? null;
+}
 
-function snapRemoval(startSec, endSec, {samples, sampleRate, fps, guards, limitSec}) {
-  let start = snapTimeMs(startSec * 1000, {samples, sampleRate, fps, guards}) / 1000;
-  let end = snapTimeMs(endSec * 1000, {samples, sampleRate, fps, guards}) / 1000;
-  if (limitSec != null && end > limitSec) end = Math.floor(limitSec * fps) / fps;
+function snapRemoval(startSec, endSec, {samples, sampleRate, fps, hardEndSec}) {
+  const limit = hardEndSec == null ? endSec : Math.min(endSec, hardEndSec);
+  let start = snapTimeMs(startSec * 1000, {samples, sampleRate, fps, guards: []}) / 1000;
+  let end = snapTimeMs(limit * 1000, {samples, sampleRate, fps, guards: []}) / 1000;
   start = Math.round(start * fps) / fps;
   end = Math.round(end * fps) / fps;
-  return [start, end];
+  if (hardEndSec != null && end > hardEndSec - 1e-4) end = Math.floor((hardEndSec - 1e-4) * fps) / fps;
+  return [Math.max(0, start), end];
 }
 
 export function buildCutlist({words, clip, silences = [], samples, sampleRate, fps = 30, audioOffsetMs = 0, sourceSha256 = null}) {
@@ -263,9 +319,10 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
   const discovered = discoverRetakes(speech.map(word => ({word: word.text, startMs: word.startMs, endMs: word.endMs})), clip);
   for (const candidate of discovered) {
     const falseStart = candidate.prefix && !candidate.exact && !candidate.earlierComplete;
-    const limit = candidate.retain?.startSec != null ? candidate.retain.startSec - ROLL_SEC : null;
-    const [start, end] = snapRemoval(candidate.remove.startSec, Math.min(candidate.remove.endSec, limit ?? candidate.remove.endSec), {samples, sampleRate, fps, guards, limitSec: limit});
-    if (end - start < 0.05) continue;
+    const kept = firstKeptWord(candidate, speech);
+    const hardEndSec = kept ? kept.startMs / 1000 : candidate.retain?.startSec;
+    const [start, end] = snapRemoval(candidate.remove.startSec, candidate.remove.endSec, {samples, sampleRate, fps, hardEndSec});
+    if (!(end - start > 0.05) || (kept && end > kept.startMs / 1000 + 0.0005)) continue;
     removes.push({
       id: candidate.id,
       kind: falseStart ? 'false-start' : 'retake',
@@ -277,19 +334,35 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
     });
   }
   for (const candidate of shortFalseStarts(speech)) {
-    const limit = (candidate.endMs / 1000) - (candidate.merged ? 0 : ROLL_SEC);
-    const [start, end] = snapRemoval(candidate.startMs / 1000, candidate.endMs / 1000, {samples, sampleRate, fps, guards, limitSec: candidate.merged ? null : limit});
+    const [start, end] = snapRemoval(candidate.startMs / 1000, candidate.endMs / 1000, {samples, sampleRate, fps, hardEndSec: candidate.endMs / 1000});
     if (end <= start) continue;
     const id = `false-${Math.round(start * 1000)}-${Math.round(end * 1000)}`;
     if (removes.some(row => row.kind !== 'pause' && Math.abs(row.startMs - start * 1000) < 200)) continue;
     removes.push({
-      id,
-      kind: 'false-start',
-      startMs: Math.round(start * 1000),
-      endMs: Math.round(end * 1000),
-      reason: candidate.merged ? '起句失败被并进同一个词，只能整词待复核，不能在词内造时间' : '短起句失败，后句接着同一开头',
-      evidence: [candidate.earlier, candidate.later],
-      status: 'proposed',
+      id, kind: 'false-start', startMs: Math.round(start * 1000), endMs: Math.round(end * 1000),
+      reason: '短起句失败，后句接着同一开头', evidence: [candidate.earlier, candidate.later], status: 'proposed',
+    });
+  }
+  for (const dip of energyGapsInsideWords(speech, samples, sampleRate)) {
+    if (dip.duration >= PAUSE_MIN_SEC) {
+      const [start, end] = snapRemoval(dip.startSec + PAUSE_BREATH_SEC / 2, dip.endSec - PAUSE_BREATH_SEC / 2, {samples, sampleRate, fps, hardEndSec: dip.endSec - PAUSE_BREATH_SEC / 2});
+      if (end - start > 0.05 && !removes.some(row => row.kind === 'pause' && start * 1000 < row.endMs && end * 1000 > row.startMs)) {
+        removes.push({
+          id: `pause-in-${Math.round(dip.startSec * 1000)}`, kind: 'pause',
+          startMs: Math.round(start * 1000), endMs: Math.round(end * 1000), keepMs: Math.round(PAUSE_BREATH_SEC * 1000),
+          reason: '词时间盖住了中间的气口，按能量把这段收成约 180ms',
+          evidence: [dip.word.text], status: 'proposed',
+        });
+      }
+    }
+    const slow = dip.msPerChar >= 450 && dip.word.endMs - dip.word.startMs >= 600 && dip.duration >= 0.12;
+    if (!slow) continue;
+    const endMs = Math.round(dip.endSec * 1000);
+    if (removes.some(row => row.kind === 'false-start' && Math.abs(row.startMs - dip.word.startMs) < 200)) continue;
+    removes.push({
+      id: `false-in-${dip.word.startMs}`, kind: 'false-start', startMs: dip.word.startMs, endMs,
+      reason: '这个词相对字数偏长，中间有一段明显变轻，可能是起句失败并进了同一个词',
+      evidence: [dip.word.text], status: 'proposed',
     });
   }
   return {

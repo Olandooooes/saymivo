@@ -70,31 +70,71 @@ test('room tone at -41 dB is still a pause relative to speech', () => {
   assert.ok(gaps.some(([start, end]) => start < 1.3 && end > 4.7 && end - start > 3), JSON.stringify(gaps));
 });
 
-test('retake edges land on frames and stop before the retained word', () => {
-  const clip = {id: 'take', src: 'clips/take.mp4', inSec: 50, outSec: 60};
+test('a retake cut stops before 只 and never ends inside that kept word', () => {
+  const clip = {id: 'take', src: 'clips/take.mp4', inSec: 23, outSec: 30};
+  const zhi = {text: '只', startMs: 25550, endMs: 25850};
   const spoken = [
-    {text: '给你一个只', startMs: 52000, endMs: 54190},
-    {text: '给你一个只', startMs: 54190, endMs: 57000},
+    {text: '如果AI', startMs: 23000, endMs: 24000},
+    {text: '给你一个', startMs: 24400, endMs: 25550},
+    zhi,
+    {text: '给你一个分析框架', startMs: 25850, endMs: 28000},
   ];
   const cutlist = buildCutlist({words: spoken, clip, silences: [], fps: 30});
   const retake = cutlist.removes.find(row => row.kind === 'retake' || row.kind === 'false-start');
   assert.ok(retake, JSON.stringify(cutlist.removes));
-  assert.ok(retake.endMs <= 54190 - 60, retake.endMs);
-  assert.ok(Math.abs(retake.endMs / 1000 * 30 - Math.round(retake.endMs / 1000 * 30)) < 1e-6, retake.endMs);
+  assert.ok(retake.endMs <= zhi.startMs, JSON.stringify(retake));
+  assert.ok(retake.endMs > zhi.startMs - 40, JSON.stringify(retake));
   assert.equal(retake.status, 'proposed');
+  const accepted = {...cutlist, removes: cutlist.removes.map(row => row.id === retake.id ? {...row, status: 'accepted'} : row)};
+  const keeps = keepRanges(clip, accepted.removes);
+  assert.ok(projectSourceMs(zhi.startMs, keeps) != null);
+  assert.ok(projectSourceMs(zhi.endMs - 1, keeps) != null);
 });
 
-test('a short false start merged into the next word stays a proposed candidate', () => {
-  const clip = {id: 'take', src: 'clips/take.mp4', inSec: 46, outSec: 50};
+test('a long word with an internal dip is a reviewable false start, without a script-specific phrase', () => {
+  assert.equal(fs.readFileSync(new URL('../src/fine-cut.mjs', import.meta.url), 'utf8').includes('从一个['), false);
+  const rate = 16000;
+  const samples = new Int16Array(rate * 2);
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const amp = time < 0.25 || time > 0.7 ? loud : loud / 20;
+    samples[index] = Math.round(amp * Math.sin(2 * Math.PI * 220 * time));
+  }
   const cutlist = buildCutlist({
-    words: [{text: '从一个，回', startMs: 46700, endMs: 48250}],
-    clip, silences: [], fps: 30,
+    words: [{text: '回', startMs: 0, endMs: 1100}],
+    clip: {id: 'take', src: 'clips/take.mp4', inSec: 0, outSec: 2},
+    silences: [], samples, sampleRate: rate, fps: 30,
   });
   const hit = cutlist.removes.find(row => row.kind === 'false-start');
   assert.ok(hit, JSON.stringify(cutlist.removes));
   assert.equal(hit.status, 'proposed');
-  assert.match(hit.evidence.join(''), /从一个/);
+  assert.equal(hit.evidence[0], '回');
+  assert.ok(hit.endMs < 1100);
   assert.match(hit.reason, /同一个词/);
+});
+
+test('silence folded into a word duration is still proposed as a pause', () => {
+  const rate = 16000;
+  const samples = new Int16Array(rate * 2);
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const speaking = time < 0.25 || (time > 0.95 && time < 1.4);
+    samples[index] = Math.round((speaking ? loud : loud / 30) * Math.sin(2 * Math.PI * 180 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [
+      {text: '这句被拉长了', startMs: 0, endMs: 1400},
+      {text: '下一句', startMs: 1400, endMs: 1800},
+    ],
+    clip: {id: 'talk', src: 'clips/talk.mp4', inSec: 0, outSec: 2},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  const pause = cutlist.removes.find(row => row.kind === 'pause' && row.startMs > 200 && row.endMs < 1100);
+  assert.ok(pause, JSON.stringify(cutlist.removes));
+  assert.equal(pause.status, 'proposed');
+  assert.ok(pause.endMs - pause.startMs > 300);
 });
 
 test('lowercase agent and AIagent become term candidates without new clocks', () => {
