@@ -60,6 +60,8 @@ export const RemotionRoot: React.FC = () => {
       durationInFrames={60}
       defaultProps={{plan: {sentences: []}}}
       calculateMetadata={({props}) => {
+        const given = Number((props as {durationInFrames?: number}).durationInFrames);
+        if (Number.isFinite(given) && given > 0) return {durationInFrames: Math.round(given), props};
         const sentences = (props.plan as {sentences?: {endMs: number}[]})?.sentences ?? [];
         const end = sentences.reduce((max, row) => Math.max(max, row.endMs ?? 0), 0);
         return {durationInFrames: Math.max(1, Math.ceil(end / 1000 * 30)), props};

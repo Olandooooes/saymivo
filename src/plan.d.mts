@@ -30,18 +30,22 @@ export type PlanSentence = {
   status?: string;
   timebase?: string;
 };
-export type PlanDocument = {style?: PlanStyle; chapters?: {id: string; title: string; startMs: number; status?: string}[]; sentences: PlanSentence[]; timebase?: string};
+export type PlanDocument = {style?: PlanStyle; chapters?: {id: string; title: string; startMs: number; status?: string}[]; sentences: PlanSentence[]; phrases?: {text: string; startMs: number; endMs: number}[]; timebase?: string};
 
 export function resolveStyle(style?: Partial<PlanStyle>): PlanStyle;
-export function talentScale(shot: string, style?: Partial<PlanStyle>): number;
-export function windowRect(shot: string, style?: Partial<PlanStyle>): {x: number; y: number; w: number; h: number};
+export type FrameSize = {width: number; height: number};
+export function talentScale(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): number;
+export function windowRect(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): {x: number; y: number; w: number; h: number};
+export function layoutRects(shot: string, style?: Partial<PlanStyle>, source?: FrameSize, composition?: FrameSize): {window: {x: number; y: number; w: number; h: number}; chapter: {x: number; y: number; w: number; h: number}; punch: {x: number; y: number; w: number; h: number}; subtitle: {x: number; y: number; w: number; h: number}};
+export function punchProgress(frame: number, fps: number, atMs: number): number;
+export function prepareWords(words?: PlanWord[], options?: {removes?: {status?: string; startMs: number; endMs: number}[]; corrections?: {status?: string; wordIds?: string[]; after: string}[]}): PlanWord[];
 export function faceInFrame(face: {x: number; y: number; w: number; h: number} | null, shot: string, style?: Partial<PlanStyle>): {x: number; y: number; w: number; h: number} | null;
 export function validatePlan(plan: PlanDocument, context?: {words?: PlanWord[]; removes?: {status?: string; startMs: number; endMs: number}[]}): {ok: boolean; plan: PlanDocument; issues: {sentenceId?: string; code: string; message: string}[]};
 export function applyFaceSafe(plan: PlanDocument, faceBox: {x: number; y: number; w: number; h: number} | null, style?: Partial<PlanStyle>): {plan: PlanDocument; issues: {sentenceId?: string; code: string; message: string}[]};
 export function projectPlan(plan: PlanDocument, keeps: number[][], words?: PlanWord[]): PlanDocument;
 export function presentation(input: {plan: PlanDocument; words?: PlanWord[]; removes?: {status?: string; startMs: number; endMs: number}[]; faceBox?: {x: number; y: number; w: number; h: number} | null; clip?: {inSec: number; outSec: number}; style?: Partial<PlanStyle>}): {plan: PlanDocument; keeps: number[][]; style: PlanStyle; issues: {sentenceId?: string; code: string; message: string}[]};
 export function highlightAtMs(item: {status?: string; atMs?: number | null}): number | null;
-export function draftPlan(input?: {words?: PlanWord[]; style?: Partial<PlanStyle>}): PlanDocument;
+export function draftPlan(input?: {words?: PlanWord[]; removes?: {status?: string; startMs: number; endMs: number}[]; corrections?: {status?: string; wordIds?: string[]; after: string}[]; style?: Partial<PlanStyle>}): PlanDocument;
 export function redraftSentence(plan: PlanDocument, words: PlanWord[], sentenceId: string): PlanDocument;
 export function rhythmHints(sentences?: PlanSentence[]): {sentenceId: string; message: string}[];
 export function subtitlePhrases(words?: PlanWord[]): {text: string; startMs: number; endMs: number}[];

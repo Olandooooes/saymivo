@@ -56,40 +56,66 @@ export function resolveStyle(style = {}) {
 
 // How many source pixels land on one composition pixel. Framed mode shrinks
 // the portrait into a window; punch may zoom inside that window, never past the cap.
-export function talentScale(shot, style = DEFAULT_STYLE) {
+const FULL_HD = {width: 1920, height: 1080};
+
+function desiredRect(shot, resolved) {
+  if (resolved.talentFraming === 'fullscreen') return {x: 0, y: 0, w: 1, h: 1};
+  if (shot === 'shift-right') {
+    const w = resolved.shiftWindowScale;
+    const h = Math.min(0.62, w * 1.15);
+    return {x: 1 - w - 0.05, y: 0.24, w, h};
+  }
+  const w = resolved.windowScale;
+  const h = Math.min(0.58, w * 0.9);
+  return {x: (1 - w) / 2, y: 0.5 - h / 2 + 0.08, w, h};
+}
+
+export function windowRect(shot, style = DEFAULT_STYLE, source = FULL_HD, composition = FULL_HD) {
+  const resolved = resolveStyle(style);
+  const rect = desiredRect(shot, resolved);
+  if (resolved.talentFraming === 'fullscreen') return rect;
+  const inner = shot === 'punch' ? resolved.punchScale : 1;
+  const cap = shot === 'punch' ? resolved.maxPunchSourceScale : resolved.maxSourceScale;
+  const maxW = source.width > 0 && composition.width > 0 ? (cap * source.width) / (composition.width * inner) : rect.w;
+  if (rect.w <= maxW) return rect;
+  const w = maxW;
+  const h = rect.h * (w / rect.w);
+  const x = shot === 'shift-right' ? Math.max(0.04, 1 - w - 0.05) : (1 - w) / 2;
+  return {x, y: rect.y, w, h};
+}
+
+export function talentScale(shot, style = DEFAULT_STYLE, source = FULL_HD, composition = FULL_HD) {
   const resolved = resolveStyle(style);
   if (resolved.talentFraming === 'fullscreen') {
     if (shot === 'punch') return resolved.fullscreenPunchScale;
     if (shot === 'shift-right') return resolved.fullscreenShiftScale;
     return 1;
   }
-  const window = shot === 'shift-right' ? resolved.shiftWindowScale : resolved.windowScale;
+  const rect = windowRect(shot, resolved, source, composition);
   const inner = shot === 'punch' ? resolved.punchScale : 1;
-  const cap = shot === 'punch' ? resolved.maxPunchSourceScale : resolved.maxSourceScale;
-  return Math.min(cap, window * inner);
+  if (!(source.width > 0) || !(composition.width > 0)) return 0;
+  return (rect.w * composition.width / source.width) * inner;
 }
 
-export function windowRect(shot, style = DEFAULT_STYLE) {
-  const resolved = resolveStyle(style);
-  if (resolved.talentFraming === 'fullscreen') return {x: 0, y: 0, w: 1, h: 1};
-  if (shot === 'shift-right') {
-    const w = resolved.shiftWindowScale;
-    const h = Math.min(0.7, w * 1.2);
-    return {x: 1 - w - 0.05, y: 0.1, w, h};
-  }
-  const w = resolved.windowScale;
-  const h = Math.min(0.62, w * 0.92);
-  return {x: (1 - w) / 2, y: 0.06, w, h};
+export function layoutRects(shot, style = DEFAULT_STYLE, source = FULL_HD, composition = FULL_HD) {
+  const window = windowRect(shot, style, source, composition);
+  const punch = shot === 'shift-right'
+    ? {x: 0.04, y: 0.22, w: 0.4, h: 0.42}
+    : {x: window.x, y: Math.max(0.02, window.y - 0.12), w: window.w, h: 0.09};
+  return {
+    window,
+    chapter: {x: window.x, y: Math.max(0.02, window.y - 0.1), w: window.w, h: 0.07},
+    punch,
+    subtitle: {x: window.x, y: Math.min(0.9, window.y + window.h + 0.012), w: window.w, h: 0.07},
+  };
 }
 
-export function faceInFrame(face, shot, style = DEFAULT_STYLE) {
+export function faceInFrame(face, shot, style = DEFAULT_STYLE, source = FULL_HD, composition = FULL_HD) {
   if (!face) return null;
   const resolved = resolveStyle(style);
-  const rect = windowRect(shot, resolved);
-  const scale = talentScale(shot, resolved);
-  const base = resolved.talentFraming === 'fullscreen'
-    ? (shot === 'punch' ? resolved.fullscreenPunchScale : shot === 'shift-right' ? resolved.fullscreenShiftScale : 1)
-    : (shot === 'shift-right' ? resolved.shiftWindowScale : resolved.windowScale);
+  const rect = windowRect(shot, resolved, source, composition);
+  const scale = talentScale(shot, resolved, source, composition);
+  const base = rect.w * composition.width / source.width;
   const inner = base > 0 ? scale / base : 1;
   const cx = rect.x + rect.w / 2;
   const cy = rect.y + rect.h / 2;
@@ -131,6 +157,39 @@ function wordIsCut(word, removes) {
   return (removes ?? []).some(row => row.status === 'accepted' && mid >= row.startMs && mid < row.endMs);
 }
 
+function textUsesCutWord(text, words, removes) {
+  if (!text) return false;
+  const sorted = [...(words ?? [])].filter(word => word.text).sort((a, b) => a.startMs - b.startMs);
+  let matched = false;
+  for (let start = 0; start < sorted.length; start++) {
+    let joined = '';
+    for (let end = start; end < sorted.length; end++) {
+      joined += sorted[end].text;
+      if (!joined.includes(text)) {
+        if ([...joined].length > [...text].length + 8) break;
+        continue;
+      }
+      matched = true;
+      if (!sorted.slice(start, end + 1).some(word => wordIsCut(word, removes))) return false;
+      break;
+    }
+  }
+  if (matched) return true;
+  return sorted.some(word => wordIsCut(word, removes) && text.includes(word.text));
+}
+
+export function prepareWords(words = [], {removes = [], corrections = []} = {}) {
+  const next = words.map(word => ({...word}));
+  for (const correction of corrections) {
+    if (correction.status !== 'accepted') continue;
+    const targets = next.filter(word => (correction.wordIds ?? []).includes(word.id));
+    if (!targets.length) continue;
+    targets[0].text = correction.after;
+    for (const extra of targets.slice(1)) extra.text = '';
+  }
+  return next.filter(word => word.text && !wordIsCut(word, removes));
+}
+
 export function validatePlan(plan, {words = [], removes = []} = {}) {
   const issues = [];
   const transcript = (words ?? []).map(word => word.text).join('');
@@ -141,6 +200,11 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
       next.shot = 'medium';
     }
     const source = `${transcript}${sentenceSource(next, words)}`;
+    next.labels = (next.labels ?? []).filter(label => {
+      if (!textUsesCutWord(label.text, words, removes)) return true;
+      issues.push({sentenceId: next.id, code: 'cut-word', message: '标签用了已剪掉的词，已去掉'});
+      return false;
+    });
     if (next.punch?.text) {
       if (!String(next.text ?? '').includes(next.punch.text) || inventedFacts(next.punch.text, source)) {
         next.status = 'rejected-hallucination';
@@ -149,9 +213,9 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
       } else {
         const word = wordById(words, next.punch.atWordId);
         const at = word?.startMs ?? next.punch.atMs;
-        if (wordIsCut(word, removes) || (Number.isFinite(at) && (removes ?? []).some(row => row.status === 'accepted' && at >= row.startMs && at < row.endMs))) {
+        if (wordIsCut(word, removes) || textUsesCutWord(next.punch.text, words, removes) || (Number.isFinite(at) && (removes ?? []).some(row => row.status === 'accepted' && at >= row.startMs && at < row.endMs))) {
           next.punch = null;
-          issues.push({sentenceId: next.id, code: 'cut-word', message: '大字落在已剪掉的词上，已去掉'});
+          issues.push({sentenceId: next.id, code: 'cut-word', message: '大字用了已剪掉的词，已去掉'});
         }
       }
     }
@@ -167,6 +231,7 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
             issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '全屏页文字不在原话里'});
             return {...item, status: 'rejected-hallucination'};
           }
+          if (item.title && textUsesCutWord(item.title, words, removes)) return {...item, status: 'proposed', atMs: null};
           const word = wordById(words, item.atWordId);
           if (!word || wordIsCut(word, removes)) return {...item, status: 'proposed', atMs: null};
           return {...item, status: item.status === 'rejected-hallucination' ? item.status : 'aligned', atMs: word.startMs};
@@ -180,6 +245,7 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
       issues.push({sentenceId: chapter.id, code: 'rejected-hallucination', message: '章节标题不在原话里'});
       return {...chapter, status: 'rejected-hallucination', title: ''};
     }
+    if (chapter.title && textUsesCutWord(chapter.title, words, removes)) return {...chapter, title: ''};
     return chapter;
   });
   return {ok: !issues.some(issue => issue.code === 'schema'), plan: {...plan, chapters, sentences, style: resolveStyle(plan?.style)}, issues};
@@ -201,7 +267,8 @@ export function applyFaceSafe(plan, faceBox, style = DEFAULT_STYLE) {
     }
     const placed = faceInFrame(faceBox, next.shot, resolved);
     const leftClash = next.shot === 'shift-right' && placed && (placed.x < 0.5 || intersects(placed, LEFT_TEXT, GAP));
-    const punchClash = next.punch && placed && intersects(placed, next.shot === 'shift-right' ? LEFT_TEXT : {x: 0.15, y: 0.68, w: 0.7, h: 0.16}, GAP);
+    const punchRect = layoutRects(next.shot, resolved).punch;
+    const punchClash = next.punch && placed && intersects(placed, punchRect, GAP);
     if (leftClash) {
       next.shot = 'medium';
       next.punch = null;
@@ -262,7 +329,11 @@ export function projectPlan(plan, keeps, words = []) {
     const start = projectSourceMs(chapter.startMs, keeps);
     return {...chapter, sourceStartMs: chapter.startMs, startMs: start ?? chapter.startMs};
   });
-  return {...plan, chapters, sentences, timebase: 'output'};
+  const phrases = subtitlePhrases(words).flatMap(phrase => {
+    const span = projectSpan(phrase.startMs, phrase.endMs, keeps);
+    return span ? [{...phrase, ...span}] : [];
+  });
+  return {...plan, chapters, sentences, phrases, timebase: 'output'};
 }
 
 export function presentation({plan, words = [], removes = [], faceBox = null, clip = {inSec: 0, outSec: 1e9}, style} = {}) {
@@ -277,17 +348,18 @@ export function highlightAtMs(item) {
   return item?.status === 'aligned' && Number.isFinite(item.atMs) ? item.atMs : null;
 }
 
-function chunkWords(words, gapMs, punctuation) {
+function chunkWords(words, gapMs, punctuation, maxChars = Infinity) {
   const groups = [];
   let current = [];
+  const length = group => group.reduce((sum, word) => sum + [...word.text].length, 0);
   for (const word of words) {
     const previous = current.at(-1);
-    if (previous && word.startMs - previous.endMs >= gapMs) {
+    if (previous && (word.startMs - previous.endMs >= gapMs || length(current) >= maxChars)) {
       groups.push(current);
       current = [];
     }
     current.push(word);
-    if (punctuation.test(word.text)) {
+    if (punctuation.test(word.text) || length(current) >= maxChars) {
       groups.push(current);
       current = [];
     }
@@ -296,43 +368,70 @@ function chunkWords(words, gapMs, punctuation) {
   return groups;
 }
 
-function phraseOf(words) {
-  const text = words.map(word => word.text).join('');
-  const slice = [...text].slice(0, Math.min(6, text.length)).join('');
-  return slice.length >= 2 ? slice : null;
+function punchFromWords(group) {
+  const picked = [];
+  for (const word of group) {
+    const next = [...picked, word].map(item => item.text).join('');
+    if (picked.length && [...next].length > 8) break;
+    picked.push(word);
+    if ([...next].length >= 4) break;
+  }
+  const text = picked.map(word => word.text).join('');
+  if ([...text].length < 2) return null;
+  return {text, atMs: picked[0].startMs, atWordId: picked[0].id};
 }
 
-export function draftPlan({words = [], style} = {}) {
-  const sorted = [...words].filter(word => word.text && word.endMs > word.startMs).sort((a, b) => a.startMs - b.startMs);
-  const groups = chunkWords(sorted, 450, /[。！？!?]$/);
-  const sentences = groups.map((group, index) => {
-    const text = group.map(word => word.text).join('');
-    const rhythm = index % 5;
-    const shot = rhythm === 2 ? 'punch' : rhythm === 4 ? 'shift-right' : 'medium';
-    const punchText = shot === 'medium' ? null : phraseOf(group);
-    const host = group[0];
-    return {
-      id: `s${index + 1}`,
-      startMs: group[0].startMs,
-      endMs: group.at(-1).endMs,
-      text,
-      shot,
-      punch: punchText ? {text: punchText, atMs: host.startMs, atWordId: host.id} : null,
-      labels: [],
-      slide: null,
-      pip: false,
-      cta: false,
-    };
-  });
+function sentencesFromGroups(groups) {
+  const sentences = [];
+  let previousShot = 'medium';
+  let rhythm = 0;
+  for (const group of groups) {
+    const duration = group.at(-1).endMs - group[0].startMs;
+    const pieces = duration > 8000 ? chunkWords(group, 280, /[。！？!?，,、；;]$/, 18) : [group];
+    for (const piece of pieces) {
+      const span = piece.at(-1).endMs - piece[0].startMs;
+      let shot = previousShot;
+      if (!(span < 1500 && sentences.length)) {
+        rhythm += 1;
+        shot = rhythm % 5 === 2 ? 'punch' : rhythm % 5 === 4 ? 'shift-right' : 'medium';
+      }
+      previousShot = shot;
+      const punch = shot === 'medium' ? null : punchFromWords(piece);
+      sentences.push({
+        id: `s${sentences.length + 1}`,
+        startMs: piece[0].startMs,
+        endMs: piece.at(-1).endMs,
+        text: piece.map(word => word.text).join(''),
+        shot,
+        punch,
+        labels: [],
+        slide: null,
+        pip: false,
+        cta: false,
+      });
+    }
+  }
+  return sentences;
+}
+
+export function draftPlan({words = [], removes = [], corrections = [], style} = {}) {
+  const sorted = prepareWords(words, {removes, corrections}).filter(word => word.endMs > word.startMs).sort((a, b) => a.startMs - b.startMs);
+  const sentences = sentencesFromGroups(chunkWords(sorted, 450, /[。！？!?]$/));
   const chapters = [];
   sentences.forEach((sentence, index) => {
     const previous = sentences[index - 1];
-    if (!previous || sentence.startMs - previous.endMs >= 1200) {
-      chapters.push({id: `ch${chapters.length + 1}`, title: [...sentence.text].slice(0, 8).join(''), startMs: sentence.startMs});
-    }
+    if (!previous || sentence.startMs - previous.endMs >= 1200) chapters.push({id: `ch${chapters.length + 1}`, title: '', startMs: sentence.startMs});
     sentence.chapterId = chapters.at(-1)?.id ?? null;
   });
   return {style: resolveStyle(style), chapters, sentences};
+}
+
+export function punchProgress(frame, fps, atMs) {
+  const age = frame - Math.round(atMs / 1000 * fps);
+  if (age < 0) return 0;
+  const span = Math.max(4, Math.round(PUNCH_SPRING_MS / 1000 * fps));
+  const t = Math.min(1, age / span);
+  return 1 - (1 - t) ** 2;
 }
 
 export function redraftSentence(plan, words, sentenceId) {
@@ -367,7 +466,7 @@ export function rhythmHints(sentences = []) {
 }
 
 export function subtitlePhrases(words = []) {
-  return chunkWords([...words].sort((a, b) => a.startMs - b.startMs), 280, /[。！？!?，,、；;]$/).map(group => ({
+  return chunkWords([...words].sort((a, b) => a.startMs - b.startMs), 280, /[。！？!?，,、；;]$/, 18).map(group => ({
     text: group.map(word => word.text).join(''),
     startMs: group[0].startMs,
     endMs: group.at(-1).endMs,

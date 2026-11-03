@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, presentation, redraftSentence, talentScale, validatePlan} from '../src/plan.mjs';
+import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, layoutRects, presentation, prepareWords, punchProgress, redraftSentence, talentScale, validatePlan} from '../src/plan.mjs';
 import {filterGraph, PORTRAIT_ENHANCE} from '../scripts/render-fine-cut.mjs';
+import {publicVideoPath, remuxOriginalAudio} from '../scripts/plan-files.mjs';
+import {spawnSync} from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
 
 const spoken = (text, start) => text.split('').map((char, index) => ({id: `w${start + index}`, text: char, startMs: start * 400 + index * 180, endMs: start * 400 + index * 180 + 160}));
 
@@ -51,7 +55,7 @@ test('source times project through the accepted cutlist and preview matches expo
 });
 
 test('without a face box every shot falls back to medium and drops the side title', () => {
-  const line = (text, startMs) => [...text].map((char, index) => ({id: `${startMs}-${index}`, text: char, startMs: startMs + index * 160, endMs: startMs + index * 160 + 140}));
+  const line = (text, startMs) => [...text].map((char, index) => ({id: `${startMs}-${index}`, text: char, startMs: startMs + index * 300, endMs: startMs + index * 300 + 260}));
   const words = [...line('先把土翻松。', 0), ...line('再浇一遍水。', 3000), ...line('然后看根系。', 6000), ...line('最后盖上草。', 9000), ...line('明天继续。', 12000)];
   const plan = draftPlan({words});
   assert.ok(plan.sentences.some(sentence => sentence.shot !== 'medium'));
@@ -72,7 +76,7 @@ test('a second topic only reuses words that were actually spoken', () => {
     assert.equal(spokenText.includes(sentence.text), true);
     if (sentence.punch) assert.equal(sentence.text.includes(sentence.punch.text), true);
   }
-  for (const chapter of plan.chapters) assert.equal(spokenText.includes(chapter.title), true);
+  for (const chapter of plan.chapters) assert.equal(chapter.title, '');
   const before = words.map(word => word.startMs);
   const again = redraftSentence(plan, words, plan.sentences[0].id);
   assert.deepEqual(words.map(word => word.startMs), before);
@@ -87,6 +91,94 @@ test('invented numbers are rejected and the punch spring is about 130ms', () => 
   assert.equal(checked.plan.sentences[0].punch, null);
   assert.ok(Math.abs(PUNCH_SPRING_MS - 130) <= 20);
   assert.ok(Math.round(PUNCH_SPRING_MS / 1000 * 30) <= Math.round(0.15 * 30));
+});
+
+test('a kept phrase is not built from a cut word, and accepted corrections replace the token', () => {
+  const words = [
+    {id: 'a', text: '如果', startMs: 0, endMs: 300},
+    {id: 'b', text: 'AIagent', startMs: 300, endMs: 700},
+    {id: 'c', text: '给你', startMs: 700, endMs: 1100},
+    {id: 'd', text: '一个框架', startMs: 2500, endMs: 4200},
+  ];
+  const corrections = [{status: 'accepted', wordIds: ['b'], after: 'AI Agent'}];
+  const removes = [{status: 'accepted', startMs: 680, endMs: 1200}];
+  const kept = prepareWords(words, {removes, corrections});
+  assert.equal(kept.some(word => word.text === '给你'), false);
+  assert.ok(kept.some(word => word.text === 'AI Agent'));
+  const plan = draftPlan({words, removes, corrections});
+  const blob = JSON.stringify(plan.sentences);
+  assert.equal(blob.includes('给你'), false);
+  assert.equal(blob.includes('AIagent'), false);
+  const edited = {sentences: [{id: 's', startMs: 0, endMs: 4200, text: '如果AI Agent给你一个框架', shot: 'punch', punch: {text: '如果AI Agent给你', atWordId: 'a', atMs: 0}}]};
+  const checked = validatePlan(edited, {words: prepareWords(words, {corrections}), removes});
+  assert.equal(checked.plan.sentences[0].punch, null);
+  assert.ok(checked.issues.some(issue => issue.code === 'cut-word'));
+});
+
+test('short fragments inherit the previous shot and punch text stays on word boundaries', () => {
+  const words = [
+    {id: 'w1', text: '如果', startMs: 0, endMs: 400},
+    {id: 'w2', text: 'AI', startMs: 400, endMs: 700},
+    {id: 'w3', text: '给你', startMs: 700, endMs: 3200},
+    {id: 'w4', text: '第一，', startMs: 4000, endMs: 4300},
+    {id: 'w5', text: '然后', startMs: 5200, endMs: 5800},
+    {id: 'w6', text: '收住', startMs: 5800, endMs: 7600},
+  ];
+  const plan = draftPlan({words});
+  assert.equal(plan.chapters[0].title, '');
+  const fragment = plan.sentences.find(sentence => sentence.text.includes('第一'));
+  const host = plan.sentences.find(sentence => sentence.text.includes('如果'));
+  const later = plan.sentences.find(sentence => sentence.text.includes('然后'));
+  assert.equal(fragment.shot, host.shot);
+  assert.equal(later.shot, 'punch');
+  let rest = later.punch.text;
+  while (rest) {
+    const word = ['然后', '收住'].find(part => rest.startsWith(part));
+    assert.ok(word, rest);
+    rest = rest.slice(word.length);
+  }
+});
+
+test('punch motion stays visible across about four frames and uses the shared text box', () => {
+  const at = 30;
+  assert.ok(punchProgress(at, 30, 1000) === 0);
+  assert.ok(punchProgress(at + 1, 30, 1000) > 0.2 && punchProgress(at + 1, 30, 1000) < 0.6);
+  assert.ok(punchProgress(at + 2, 30, 1000) < 0.9);
+  assert.equal(punchProgress(at + 4, 30, 1000), 1);
+  const box = layoutRects('punch').punch;
+  assert.ok(box.y < 0.5, box.y);
+  assert.equal(fs.readFileSync(new URL('../src/plan-kit/PunchText.tsx', import.meta.url), 'utf8').includes('layoutRects'), true);
+  assert.equal(fs.readFileSync(new URL('../src/plan-kit/Slides.tsx', import.meta.url), 'utf8').includes('>{kind}<'), false);
+});
+
+test('a narrower source cannot be enlarged past one source pixel', () => {
+  const source = {width: 960, height: 540};
+  const composition = {width: 1920, height: 1080};
+  for (const shot of ['medium', 'shift-right']) assert.ok(talentScale(shot, DEFAULT_STYLE, source, composition) <= 1, shot);
+  assert.ok(talentScale('punch', DEFAULT_STYLE, source, composition) <= DEFAULT_STYLE.maxPunchSourceScale);
+});
+
+test('the rendered plan points at a public-relative file and keeps the fine-cut audio', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-files-'));
+  const publicDir = path.join(dir, 'public');
+  fs.mkdirSync(publicDir);
+  const outside = path.join(dir, 'fine.mp4');
+  fs.writeFileSync(outside, 'video');
+  assert.equal(publicVideoPath(outside, publicDir), 'plan-src/fine.mp4');
+  assert.equal(fs.readFileSync(path.join(publicDir, 'plan-src/fine.mp4'), 'utf8'), 'video');
+  const make = (file, audioSeconds) => spawnSync('ffmpeg', ['-y', '-f', 'lavfi', '-t', '1', '-i', 'color=c=black:s=160x90:r=30', '-f', 'lavfi', '-t', String(audioSeconds), '-i', 'sine=frequency=440:sample_rate=48000', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', file], {encoding: 'utf8'});
+  const fine = path.join(dir, 'clock.mp4');
+  const late = path.join(dir, 'late.mp4');
+  assert.equal(make(fine, 1).status, 0);
+  assert.equal(make(late, 1.08).status, 0);
+  const mixed = path.join(dir, 'mixed.mp4');
+  remuxOriginalAudio(late, fine, mixed);
+  const audio = file => JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=duration', '-of', 'json', file], {encoding: 'utf8'}).stdout).streams[0].duration;
+  assert.ok(Math.abs(Number(audio(mixed)) - Number(audio(fine))) < 0.03, audio(mixed));
+  const detected = spawnSync('python3', ['scripts/face-detect.py', fine, path.join(dir, 'face.json')], {encoding: 'utf8'});
+  assert.equal(detected.status, 0, detected.stderr);
+  const face = JSON.parse(fs.readFileSync(path.join(dir, 'face.json'), 'utf8'));
+  assert.equal(Object.hasOwn(face, 'face'), true);
 });
 
 test('portrait enhancement is optional and does not move the audio trim', () => {

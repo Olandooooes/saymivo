@@ -10,10 +10,13 @@ if (!wordsFile || !cutlistFile || !outFile) {
 const wordsDoc = JSON.parse(fs.readFileSync(wordsFile, 'utf8'));
 const cutlist = JSON.parse(fs.readFileSync(cutlistFile, 'utf8'));
 const words = wordsDoc.words ?? wordsDoc;
+const corrections = wordsDoc.corrections ?? [];
 const removes = cutlist.removes ?? [];
-const faceBox = faceFile ? JSON.parse(fs.readFileSync(faceFile, 'utf8')) : null;
-const clip = {inSec: 0, outSec: Math.max(...words.map(word => word.endMs)) / 1000 + 1};
-const drafted = draftPlan({words});
-const ready = presentation({plan: drafted, words, removes, faceBox, clip});
-fs.writeFileSync(outFile, JSON.stringify({source: drafted, projected: ready.plan, issues: ready.issues, style: ready.style}, null, 2));
+const faceBox = faceFile ? JSON.parse(fs.readFileSync(faceFile, 'utf8')).face ?? JSON.parse(fs.readFileSync(faceFile, 'utf8')) : null;
+const clip = {inSec: 0, outSec: (Math.max(...words.map(word => word.endMs), 1000) / 1000) + 1};
+const source = draftPlan({words, removes, corrections});
+const ready = presentation({plan: source, words, removes, faceBox, clip});
+fs.writeFileSync(outFile, JSON.stringify({
+  source, words, corrections, removes, faceBox, clip, style: ready.style, projected: ready.plan, issues: ready.issues,
+}, null, 2));
 console.log(JSON.stringify({sentences: ready.plan.sentences.length, issues: ready.issues.length, outFile}));

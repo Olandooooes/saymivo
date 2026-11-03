@@ -1,6 +1,8 @@
 import React, {useMemo, useState} from 'react';
+import {Player} from '@remotion/player';
 import type {Caption} from '../src/captions';
 import {draftPlan, presentation, redraftSentence, rhythmHints} from '../src/plan.mjs';
+import {PlanPreview} from '../src/plan-kit/PlanVideo';
 
 type Word = {id: string; text: string; startMs: number; endMs: number};
 type Sentence = {id: string; text: string; startMs: number; endMs: number; shot: string; punch?: {text: string; atMs?: number} | null; slide?: {kind: string; items: {title: string; atWordId?: string}[]} | null; faceConflict?: string};
@@ -11,10 +13,12 @@ const shots = [
   ['punch', '推进'],
 ] as const;
 
-export function PlanReview({captions, clipId, onClose}: {captions: Caption[]; clipId?: string; onClose: () => void}) {
+export function PlanReview({captions, clipId, removes = [], faceBox = null, src, onClose}: {captions: Caption[]; clipId?: string; removes?: {status?: string; startMs: number; endMs: number}[]; faceBox?: {x: number; y: number; w: number; h: number} | null; src?: string; onClose: () => void}) {
   const words = useMemo<Word[]>(() => captions.filter(caption => !clipId || caption.clipId === clipId).flatMap(caption => caption.words.map((word, index) => ({id: `${caption.id}-${index}`, text: word.text, startMs: word.startMs, endMs: word.endMs}))), [captions, clipId]);
-  const [plan, setPlan] = useState(() => draftPlan({words}));
-  const view = presentation({plan, words, removes: [], faceBox: null, clip: {inSec: 0, outSec: (words.at(-1)?.endMs ?? 1000) / 1000 + 1}});
+  const [plan, setPlan] = useState(() => draftPlan({words, removes}));
+  const [currentId, setCurrentId] = useState(plan.sentences[0]?.id ?? '');
+  const clip = {inSec: 0, outSec: (words.at(-1)?.endMs ?? 1000) / 1000 + 1};
+  const view = presentation({plan, words, removes, faceBox, clip});
   const hints = rhythmHints(plan.sentences);
   const setSentence = (id: string, patch: Partial<Sentence>) => setPlan(current => ({...current, sentences: current.sentences.map(sentence => sentence.id === id ? {...sentence, ...patch} : sentence)}));
   return (
@@ -22,10 +26,11 @@ export function PlanReview({captions, clipId, onClose}: {captions: Caption[]; cl
       <div className="flex justify-between"><h2 id="plan-title" className="font-bold text-lg">分镜审阅</h2><button type="button" onClick={onClose}>关闭</button></div>
       <p className="my-2 text-sm">景别和大字可以改。改完不重新识别，词时间保持原样。预览和导出用同一份投影。</p>
       {hints.map(hint => <p key={hint.sentenceId + hint.message} className="text-sm">{hint.message}</p>)}
+      {view.plan.sentences.filter(sentence => sentence.id === currentId).map(sentence => <Player key={sentence.id} component={PlanPreview} inputProps={{sentence, phrases: view.plan.phrases, style: view.style, src}} durationInFrames={60} compositionWidth={1920} compositionHeight={1080} fps={30} controls style={{width: '100%', aspectRatio: '16/9', background: '#111'}} />)}
       {plan.sentences.map(sentence => {
         const shown = view.plan.sentences.find(row => row.id === sentence.id) ?? sentence;
         return (
-          <article key={sentence.id} className="border border-outline-variant rounded p-3 my-2">
+          <article key={sentence.id} className="border border-outline-variant rounded p-3 my-2" onClick={() => setCurrentId(sentence.id)}>
             <p>{sentence.text}</p>
             <label className="text-sm">景别 <select aria-label={`${sentence.id} 景别`} value={sentence.shot} onChange={event => setSentence(sentence.id, {shot: event.target.value})}>{shots.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="text-sm block">大字 <input aria-label={`${sentence.id} 大字`} value={sentence.punch?.text ?? ''} onChange={event => setSentence(sentence.id, {punch: event.target.value ? {text: event.target.value, atMs: sentence.startMs} : null})} /></label>
