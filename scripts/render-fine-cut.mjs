@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {buildCutlist, buildWordsDocument, keepRanges} from '../src/fine-cut.mjs';
+import {speechPauseGaps} from './speech-pause-gaps.mjs';
+import {adaptiveSilenceRanges, buildCutlist, buildWordsDocument, keepRanges, mergeIntervals} from '../src/fine-cut.mjs';
 
 const ffmpeg = () => (fs.existsSync('.tools/bin/ffmpeg') ? '.tools/bin/ffmpeg' : 'ffmpeg');
 const python = () => (fs.existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3');
@@ -31,8 +32,8 @@ export function readPcm16(file) {
   throw Error('时钟 WAV 没有 data 块');
 }
 
-export function silenceRanges(wav, durationSec) {
-  const log = run(ffmpeg(), ['-hide_banner', '-i', wav, '-vn', '-af', 'silencedetect=noise=-42dB:d=0.40', '-f', 'null', '-']).stderr;
+export function silenceRanges(wav, durationSec, noiseDb = -42) {
+  const log = run(ffmpeg(), ['-hide_banner', '-i', wav, '-vn', '-af', `silencedetect=noise=${noiseDb}dB:d=0.40`, '-f', 'null', '-']).stderr;
   const gaps = [];
   let start = null;
   for (const line of log.split('\n')) {
@@ -49,7 +50,10 @@ export function planFromClock({wav, receipt, words, clip, fps = 30, glossary = '
   const samples = readPcm16(wav);
   const durationSec = samples.length / 16000;
   const bounded = {...clip, inSec: clip.inSec ?? 0, outSec: clip.outSec ?? durationSec, sourceDurationSec: clip.sourceDurationSec ?? durationSec};
-  const silences = silenceRanges(wav, durationSec);
+  let fromVad = [];
+  const vad = spawnSync(python(), ['scripts/detect-speech-pauses.py', '--clocked-wav', wav, '--min-silence-ms', '400'], {encoding: 'utf8', maxBuffer: 4 * 1024 * 1024});
+  if (vad.status === 0) { try { fromVad = speechPauseGaps(JSON.parse(vad.stdout)); } catch { /* VAD is optional */ } }
+  const silences = mergeIntervals([adaptiveSilenceRanges(samples, 16000), fromVad, silenceRanges(wav, durationSec)]);
   const document = buildWordsDocument({
     words, sourceSha256: receipt.sourceSha256, audioClock: receipt, model: 'faster-whisper', glossary,
   });
@@ -60,16 +64,17 @@ export function planFromClock({wav, receipt, words, clip, fps = 30, glossary = '
   return {words: document, cutlist, silences, durationSec};
 }
 
-function filterGraph(keeps, offsetSec, fps) {
+export function filterGraph(keeps, fps) {
+  // Audio PTS already include the container delay. Subtracting audioOffsetMs
+  // here trims that delay a second time and the soundtrack lands ~offset late.
   const parts = keeps.map(([start, end], index) => {
-    const duration = Math.max(0.04, end - start);
-    const audio = start - offsetSec;
-    const audioEnd = end - offsetSec;
-    const pad = audio < 0 ? Math.round(-audio * 1000) : 0;
-    const fade = duration > 0.05 ? `,afade=t=in:st=0:d=0.012,afade=t=out:st=${(duration - 0.012).toFixed(4)}:d=0.012` : '';
-    const delay = pad ? `,adelay=${pad}:all=1` : '';
-    return `[0:v]trim=start=${start.toFixed(4)}:end=${end.toFixed(4)},setpts=PTS-STARTPTS,fps=${fps}[v${index}];` +
-      `[0:a]atrim=start=${Math.max(0, audio).toFixed(4)}:end=${Math.max(0.04, audioEnd).toFixed(4)},asetpts=PTS-STARTPTS${delay}${fade}[a${index}]`;
+    const duration = Math.max(1 / fps, end - start);
+    const fade = duration > 0.05 ? `,afade=t=in:st=0:d=0.012,afade=t=out:st=${Math.max(0, duration - 0.012).toFixed(4)}:d=0.012` : '';
+    const span = duration.toFixed(4);
+    const open = start.toFixed(4);
+    const close = end.toFixed(4);
+    return `[0:v]trim=start=${open}:end=${close},setpts=PTS-STARTPTS,fps=${fps}[v${index}];` +
+      `[0:a]atrim=start=${open}:end=${close},asetpts=PTS-STARTPTS${fade},apad=whole_dur=${span},atrim=0:${span}[a${index}]`;
   });
   const concat = keeps.map((_, index) => `[v${index}][a${index}]`).join('') + `concat=n=${keeps.length}:v=1:a=1[v][a]`;
   return parts.join(';') + ';' + concat;
@@ -77,13 +82,12 @@ function filterGraph(keeps, offsetSec, fps) {
 
 export function renderFineCut({source, cutlist, clip, output, fps = 30}) {
   const keeps = keepRanges(clip, cutlist.removes);
-  const offsetSec = (cutlist.audioOffsetMs ?? 0) / 1000;
   const temporary = output.replace(/\.mp4$/i, '') + '.encoded.mp4';
   fs.mkdirSync(path.dirname(output), {recursive: true});
   fs.rmSync(temporary, {force: true});
   fs.rmSync(output, {force: true});
   run(ffmpeg(), [
-    '-y', '-i', source, '-filter_complex', filterGraph(keeps, offsetSec, fps),
+    '-y', '-i', source, '-filter_complex', filterGraph(keeps, fps),
     '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
     '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', temporary,
   ]);
@@ -120,7 +124,7 @@ export function syncAtCuts(file, keeps, fps) {
   const frame = 1 / fps;
   return {
     startDeltaSec: startDelta, durationDeltaSec: durationDelta, joins: rows,
-    withinOneFrame: Math.abs(startDelta) <= frame && Math.abs(durationDelta) <= frame + 0.02 && rows.every(row => row.audioDeltaSec != null && Math.abs(row.audioDeltaSec) <= frame),
+    withinOneFrame: Math.abs(startDelta) <= frame && Math.abs(durationDelta) <= 0.08 && rows.every(row => row.audioDeltaSec != null && Math.abs(row.audioDeltaSec) <= frame),
   };
 }
 

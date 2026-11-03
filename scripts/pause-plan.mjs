@@ -1,7 +1,7 @@
 // Pauses longer than 0.4s shrink to a 0.18s breath. Word ranges stay intact.
 export const PAUSE_BREATH_SEC=0.18;
 export const PAUSE_MIN_SEC=0.4;
-export function pauseSegments(clip,gaps,words=[]){
+export function pauseSegments(clip,gaps,words=[],pad=0.15){
  const speech=words.filter(w=>w.endMs>clip.inSec*1000&&w.startMs<clip.outSec*1000).sort((a,b)=>a.startMs-b.startMs);
  const cuts=[];
  for(const [a,b] of gaps){
@@ -9,7 +9,7 @@ export function pauseSegments(clip,gaps,words=[]){
   // A slightly inaccurate boundary must not veto a whole long pause.
   // Subtract every protected word, then shrink only its remaining interior.
   for(const word of speech){
-   const left=word.startMs/1000-.15,right=word.endMs/1000+.15;
+   const left=word.startMs/1000-pad,right=word.endMs/1000+pad;
    pieces=pieces.flatMap(([x,y])=>right<=x||left>=y?[[x,y]]:[[x,Math.min(y,left)],[Math.max(x,right),y]].filter(([u,v])=>v>u));
   }
   for(const [x,y] of pieces){
