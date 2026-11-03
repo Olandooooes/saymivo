@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, layoutRects, presentation, prepareWords, punchProgress, readFaceBox, redraftSentence, subtitlePhrases, talentScale, validatePlan, windowRect} from '../src/plan.mjs';
+import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, layoutRects, presentation, prepareWords, punchProgress, punchScaleFactor, readFaceBox, redraftSentence, subtitlePhrases, talentScale, validatePlan, windowRect} from '../src/plan.mjs';
 import {filterGraph, PORTRAIT_ENHANCE} from '../scripts/render-fine-cut.mjs';
 import {publicVideoPath, remuxOriginalAudio} from '../scripts/plan-files.mjs';
 import {spawnSync} from 'node:child_process';
@@ -145,6 +145,9 @@ test('punch motion stays visible across about four frames and uses the shared te
   assert.ok(punchProgress(at + 1, 30, 1000) > 0.2 && punchProgress(at + 1, 30, 1000) < 0.6);
   assert.ok(punchProgress(at + 2, 30, 1000) < 0.9);
   assert.equal(punchProgress(at + 4, 30, 1000), 1);
+  assert.ok(Math.abs(punchScaleFactor(0.62) - 1.08) < 0.001);
+  assert.equal(punchScaleFactor(1), 1);
+  assert.equal(fs.readFileSync(new URL('../src/plan-kit/PunchText.tsx', import.meta.url), 'utf8').includes('punchScaleFactor'), true);
   const box = layoutRects('punch').punch;
   assert.ok(box.y < 0.5, box.y);
   assert.equal(fs.readFileSync(new URL('../src/plan-kit/PunchText.tsx', import.meta.url), 'utf8').includes('layoutRects'), true);

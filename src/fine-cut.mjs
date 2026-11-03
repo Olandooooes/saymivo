@@ -2,7 +2,7 @@
 // Retake discovery is the existing local sequence comparer. This module does
 // not approve a retake; every candidate stays proposed until a person accepts it.
 import {discoverRetakes} from '../server/retake-analyzer.mjs';
-import {pauseSegments, PAUSE_BREATH_SEC, PAUSE_MIN_SEC} from '../scripts/pause-plan.mjs';
+import {pausePolicyFor, pauseSegments, PAUSE_BREATH_SEC, PAUSE_DETECT_SEC, PAUSE_MIN_SEC, PAUSE_SENTENCE_BREATH_SEC, PAUSE_SENTENCE_MIN_SEC} from '../scripts/pause-plan.mjs';
 import {parseGlossary} from '../server/proofread.mjs';
 
 const TERMS = [
@@ -142,10 +142,10 @@ export function wordGaps(words, clip) {
   let cursor = clip.inSec;
   for (const word of sorted) {
     const start = Math.max(clip.inSec, word.startMs / 1000);
-    if (start - cursor >= PAUSE_MIN_SEC) gaps.push([cursor, start]);
+    if (start - cursor >= PAUSE_DETECT_SEC) gaps.push([cursor, start]);
     cursor = Math.max(cursor, Math.min(clip.outSec, word.endMs / 1000));
   }
-  if (clip.outSec - cursor >= PAUSE_MIN_SEC) gaps.push([cursor, clip.outSec]);
+  if (clip.outSec - cursor >= PAUSE_DETECT_SEC) gaps.push([cursor, clip.outSec]);
   return gaps;
 }
 
@@ -192,10 +192,10 @@ export function adaptiveSilenceRanges(samples, sampleRate) {
   let start = null;
   for (const level of levels) {
     if (level.rms < reference.threshold) { if (start == null) start = level.startSec; }
-    else if (start != null) { if (level.startSec - start >= PAUSE_MIN_SEC) gaps.push([start, level.startSec]); start = null; }
+    else if (start != null) { if (level.startSec - start >= PAUSE_DETECT_SEC) gaps.push([start, level.startSec]); start = null; }
   }
   const end = levels.at(-1).endSec;
-  if (start != null && end - start >= PAUSE_MIN_SEC) gaps.push([start, end]);
+  if (start != null && end - start >= PAUSE_DETECT_SEC) gaps.push([start, end]);
   return gaps;
 }
 
@@ -374,6 +374,97 @@ function keepWholeWords(startSec, endSec, marked, previous, speech) {
   return start;
 }
 
+const TAIL_LOOK_SEC = 0.4;
+const TAIL_DECAY_SEC = 0.09;
+const ONSET_LOOK_SEC = 0.12;
+
+// ASR often ends before an unvoiced release. Walk the waveform, then keep a
+// short decay. Never cross into the next word, and never shrink the ASR span.
+export function protectWordEdges(words, samples, sampleRate) {
+  const sorted = words.map(word => ({...word})).sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+  const reference = samples?.length && sampleRate ? clipSpeechReference(samples, sampleRate) : null;
+  const levels = reference ? rmsWindows(samples, sampleRate) : [];
+  const gate = reference ? Math.max(reference.noise * 2.5, reference.speech * 10 ** (-28 / 20)) : 0;
+  const limit = samples?.length && sampleRate ? samples.length / sampleRate : Infinity;
+  for (let index = 0; index < sorted.length; index++) {
+    const word = sorted[index];
+    if (!(word.endMs > word.startMs)) continue;
+    const prevEnd = index > 0 ? sorted[index - 1].endMs / 1000 : 0;
+    const nextStart = index + 1 < sorted.length ? sorted[index + 1].startMs / 1000 : limit;
+    const asrStart = word.startMs / 1000;
+    const asrEnd = word.endMs / 1000;
+    let start = asrStart;
+    let end = asrEnd;
+    if (levels.length) {
+      const onsetFloor = Math.max(prevEnd + 0.02, start - ONSET_LOOK_SEC);
+      for (const level of levels) {
+        if (level.endSec <= onsetFloor || level.startSec >= asrStart) continue;
+        if (level.rms >= gate) { start = Math.max(onsetFloor, level.startSec); break; }
+      }
+      const tailCeil = Math.min(nextStart - 0.02, asrEnd + TAIL_LOOK_SEC);
+      let acoustic = asrEnd;
+      if (tailCeil > asrEnd + 0.005) {
+        for (const level of levels) {
+          if (level.endSec <= asrEnd || level.startSec >= tailCeil) continue;
+          if (level.rms >= gate) acoustic = Math.max(acoustic, Math.min(tailCeil, level.endSec));
+        }
+      }
+      end = Math.min(nextStart - 0.02, acoustic + TAIL_DECAY_SEC);
+    } else {
+      const before = Math.max(0, asrStart - prevEnd - 0.02);
+      const after = Number.isFinite(nextStart) ? Math.max(0, nextStart - asrEnd - 0.02) : 0.1;
+      start -= Math.min(0.04, before / 2);
+      end += Math.min(0.1, after / 2);
+    }
+    if (Number.isFinite(nextStart)) end = Math.min(end, Math.max(asrEnd, nextStart - 0.02));
+    word.startMs = Math.round(Math.max(0, Math.min(asrStart, start)) * 1000);
+    word.endMs = Math.max(word.startMs + 1, Math.round(Math.max(asrEnd, end) * 1000));
+  }
+  return sorted;
+}
+
+// A transcript hole can hide real speech. Keep any stretch that is still
+// speech-loud, including a filler that never became a word, and only return
+// the quiet pieces around it.
+export function dropLoudGaps(gaps, samples, sampleRate) {
+  const reference = samples?.length && sampleRate ? clipSpeechReference(samples, sampleRate) : null;
+  const levels = reference ? rmsWindows(samples, sampleRate) : [];
+  if (!reference || !levels.length) return gaps ?? [];
+  const pieces = [];
+  for (const [start, end] of gaps ?? []) {
+    if (!(end > start)) continue;
+    const runs = [];
+    let run = null;
+    for (const level of levels) {
+      if (level.endSec <= start || level.startSec >= end) continue;
+      if (level.rms < reference.voiced) continue;
+      const open = Math.max(start, level.startSec);
+      const close = Math.min(end, level.endSec);
+      if (!run || open > run[1] + 0.12) {
+        if (run) runs.push(run);
+        run = [open, close];
+      } else run[1] = Math.max(run[1], close);
+    }
+    if (run) runs.push(run);
+    let cursor = start;
+    for (const [open, close] of runs) {
+      const left = Math.max(start, open - 0.08);
+      const right = Math.min(end, close + 0.08);
+      if (left > cursor + 0.02) pieces.push([cursor, left]);
+      cursor = Math.max(cursor, right);
+    }
+    if (end > cursor + 0.02) pieces.push([cursor, end]);
+  }
+  return pieces;
+}
+
+function dipPolicy(dip) {
+  const trailing = dip.speechAfter < 0.08;
+  const text = String(dip.word?.text ?? '').trim();
+  if (trailing && /[。！？!?；;]$/u.test(text)) return {minSec: PAUSE_SENTENCE_MIN_SEC, breathSec: PAUSE_SENTENCE_BREATH_SEC};
+  return {minSec: PAUSE_MIN_SEC, breathSec: PAUSE_BREATH_SEC};
+}
+
 function snapRemoval(startSec, endSec, {samples, sampleRate, fps, hardEndSec}) {
   const limit = hardEndSec == null ? endSec : Math.min(endSec, hardEndSec);
   let start = snapTimeMs(startSec * 1000, {samples, sampleRate, fps, guards: []}) / 1000;
@@ -386,9 +477,10 @@ function snapRemoval(startSec, endSec, {samples, sampleRate, fps, hardEndSec}) {
 
 export function buildCutlist({words, clip, silences = [], samples, sampleRate, fps = 30, audioOffsetMs = 0, sourceSha256 = null}) {
   const speech = words.map(word => ({...word, text: word.text ?? word.word}));
-  const gaps = mergeIntervals([silences, wordGaps(speech, clip)]);
-  const segments = pauseSegments(clip, gaps, speech, 0.04);
-  const guards = speech.map(word => [word.startMs / 1000, word.endMs / 1000]);
+  const protectedSpeech = protectWordEdges(speech, samples, sampleRate);
+  const gaps = mergeIntervals([silences, dropLoudGaps(wordGaps(speech, clip), samples, sampleRate)]);
+  const segments = pauseSegments(clip, gaps, protectedSpeech, 0.04);
+  const guards = protectedSpeech.map(word => [word.startMs / 1000, word.endMs / 1000]);
   const snap = sec => snapTimeMs(sec * 1000, {samples, sampleRate, fps, guards}) / 1000;
   const removes = [];
   for (const pause of removalFromSegments(clip, segments)) {
@@ -398,13 +490,14 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
     if (end - start < 0.02) continue;
     const before = speech.filter(word => word.endMs / 1000 <= pause.startSec + 0.05).at(-1);
     const after = speech.find(word => word.startMs / 1000 >= pause.endSec - 0.05);
+    const policy = pausePolicyFor(speech, pause.startSec);
     removes.push({
       id: `pause-${removes.length + 1}`,
       kind: 'pause',
       startMs: Math.round(start * 1000),
       endMs: Math.round(end * 1000),
-      keepMs: Math.round(PAUSE_BREATH_SEC * 1000),
-      reason: `长于 ${Math.round(PAUSE_MIN_SEC * 1000)}ms 的气口收到约 ${Math.round(PAUSE_BREATH_SEC * 1000)}ms`,
+      keepMs: Math.round(policy.breathSec * 1000),
+      reason: `长于 ${Math.round(policy.minSec * 1000)}ms 的气口收到约 ${Math.round(policy.breathSec * 1000)}ms`,
       evidence: [before?.text, after?.text].filter(Boolean),
       status: 'proposed',
     });
@@ -438,13 +531,14 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
   }
   for (const dip of energyGapsInsideWords(speech, samples, sampleRate)) {
     const bothSides = dip.speechBefore >= 0.08 && dip.speechAfter >= 0.08;
-    if (dip.duration >= PAUSE_MIN_SEC) {
-      const [start, end] = snapRemoval(dip.startSec + PAUSE_BREATH_SEC / 2, dip.endSec - PAUSE_BREATH_SEC / 2, {samples, sampleRate, fps, hardEndSec: dip.endSec - 0.02});
+    const dipKeep = dipPolicy(dip);
+    if (dip.duration >= dipKeep.minSec) {
+      const [start, end] = snapRemoval(dip.startSec + dipKeep.breathSec / 2, dip.endSec - dipKeep.breathSec / 2, {samples, sampleRate, fps, hardEndSec: dip.endSec - 0.02});
       if (end - start > 0.05 && !removes.some(row => row.kind === 'pause' && start * 1000 < row.endMs && end * 1000 > row.startMs)) {
         removes.push({
           id: `pause-in-${Math.round(dip.startSec * 1000)}`, kind: 'pause',
-          startMs: Math.round(start * 1000), endMs: Math.round(end * 1000), keepMs: Math.round(PAUSE_BREATH_SEC * 1000),
-          reason: '词时间盖住了中间的气口，按整段人声电平把这段收成约 180ms',
+          startMs: Math.round(start * 1000), endMs: Math.round(end * 1000), keepMs: Math.round(dipKeep.breathSec * 1000),
+          reason: `词时间盖住了中间的气口，按整段人声电平把这段收成约 ${Math.round(dipKeep.breathSec * 1000)}ms`,
           evidence: [dip.word.text], status: 'proposed',
         });
       }
@@ -475,6 +569,8 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
     audioOffsetMs,
     breathMs: Math.round(PAUSE_BREATH_SEC * 1000),
     minPauseMs: Math.round(PAUSE_MIN_SEC * 1000),
+    sentenceBreathMs: Math.round(PAUSE_SENTENCE_BREATH_SEC * 1000),
+    sentenceMinPauseMs: Math.round(PAUSE_SENTENCE_MIN_SEC * 1000),
     removes,
   };
 }

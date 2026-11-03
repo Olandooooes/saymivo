@@ -503,6 +503,15 @@ export function punchProgress(frame, fps, atMs) {
   return 1 - (1 - t) ** 2;
 }
 
+// 0.82 → about 1.08 → 1.0 inside the same short spring. The peak is the pop; it settles at 1.
+export function punchScaleFactor(progress) {
+  if (!(progress > 0)) return 0.82;
+  const peak = 1.08;
+  const rise = 0.62;
+  if (progress < rise) return 0.82 + (peak - 0.82) * (progress / rise);
+  return peak + (1 - peak) * Math.min(1, (progress - rise) / (1 - rise));
+}
+
 export function redraftSentence(plan, words, sentenceId) {
   const current = (plan?.sentences ?? []).find(sentence => sentence.id === sentenceId);
   if (!current) return plan;

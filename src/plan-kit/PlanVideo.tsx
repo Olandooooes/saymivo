@@ -40,14 +40,14 @@ export function PlanVideo({plan, src}: {plan: Plan; src?: string}) {
   const phrase = (plan.phrases ?? []).find(row => timeMs >= row.startMs && timeMs < row.endMs);
   const video = mediaSrc(src);
   return (
-    <AbsoluteFill style={{background: 'radial-gradient(ellipse at 50% 58%, #4a3014 0%, #24180f 42%, #100e0c 100%)'}}>
+    <AbsoluteFill style={{background: 'radial-gradient(ellipse at 78% 42%, #5d6d96 0%, #2c2d4e 36%, #16172a 70%, #0c0e16 100%)'}}>
       {!onSlide && sentence ? <Talking shot={sentence.shot} src={video} style={plan.style} /> : null}
       {onSlide && sentence?.slide ? <Slides kind={sentence.slide.kind} title={sentence.slide.title} items={sentence.slide.items} timeMs={timeMs} /> : null}
       {onSlide && video ? <PiP src={video} /> : null}
       {sentence?.punch?.atMs != null && !onSlide ? <PunchText text={sentence.punch.text} atMs={sentence.punch.atMs} shot={sentence.shot} style={plan.style} /> : null}
       {(sentence?.labels ?? []).map(label => timeMs >= label.atMs ? <div key={label.text} style={{position: 'absolute', left: '8%', top: '8%', background: 'rgba(58,58,58,0.88)', color: YELLOW, fontFamily: FONT_BOLD, fontSize: 28, borderRadius: 999, padding: '8px 18px'}}>{label.text}</div> : null)}
       {chapterStart?.title ? <ChapterCard title={chapterStart.title} /> : null}
-      {chapter?.title && rects && !onSlide ? <div style={{position: 'absolute', left: `${rects.chapter.x * 100}%`, top: `${rects.chapter.y * 100}%`, width: `${rects.chapter.w * 100}%`, color: '#fff', fontFamily: FONT_BOLD, fontSize: 28}}>{chapter.title}</div> : null}
+      {chapter?.title && rects && !onSlide ? <div style={{position: 'absolute', left: `${(rects.window.x + 0.03) * 100}%`, top: `${(rects.window.y + 0.05) * 100}%`, background: '#fff', color: '#111', fontFamily: FONT_BOLD, fontSize: 28, lineHeight: 1, borderRadius: 999, border: '3px solid #111', padding: '8px 18px', boxShadow: '0 8px 24px rgba(0,0,0,0.28)'}}>{chapter.title}</div> : null}
       {sentence?.cta ? <div style={{position: 'absolute', left: 80, bottom: 160, ...heavyText(YELLOW, 8), fontFamily: FONT_HEAVY, fontSize: 72}}>{sentence.text}</div> : null}
       {phrase && !sentence?.cta && rects ? <Subtitle text={phrase.text} rect={rects.subtitle} /> : null}
       <Progress chapters={plan.chapters ?? []} timeMs={timeMs} totalMs={durationInFrames / fps * 1000} title={chapter?.title} />
@@ -62,7 +62,7 @@ function ChapterCard({title}: {title: string}) {
 function Subtitle({text, rect}: {text: string; rect: {x: number; y: number; w: number}}) {
   return (
     <div style={{position: 'absolute', left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.w * 100}%`, display: 'flex', justifyContent: 'center'}}>
-      <div style={{background: 'rgba(48,48,48,0.62)', color: '#fff', fontFamily: FONT_MED, fontSize: 36, lineHeight: 1.25, padding: '6px 18px 8px', borderRadius: 10, maxWidth: '100%', textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'}}>{text}</div>
+      <div style={{color: '#fff', fontFamily: FONT_MED, fontSize: 42, lineHeight: 1.25, maxWidth: '100%', textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', WebkitTextStroke: '5px #000', paintOrder: 'stroke fill', textShadow: '0 2px 8px rgba(0,0,0,0.45)'}}>{text}</div>
     </div>
   );
 }
@@ -70,8 +70,11 @@ function Subtitle({text, rect}: {text: string; rect: {x: number; y: number; w: n
 function Progress({chapters, timeMs, totalMs, title}: {chapters: {id: string; title: string; startMs: number}[]; timeMs: number; totalMs: number; title?: string}) {
   return (
     <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 56, background: '#050505'}}>
-      <div style={{height: 6, width: `${Math.min(100, timeMs / Math.max(1, totalMs) * 100)}%`, background: ORANGE}} />
-      <div style={{fontFamily: FONT_BOLD, fontSize: 20, color: '#fff', textAlign: 'center'}}>{title}</div>
+      <div style={{position: 'relative', height: 6, background: 'rgba(255,255,255,0.16)'}}>
+        <div style={{height: 6, width: `${Math.min(100, timeMs / Math.max(1, totalMs) * 100)}%`, background: ORANGE}} />
+        {chapters.map(chapter => <div key={chapter.id} style={{position: 'absolute', left: `${Math.min(100, chapter.startMs / Math.max(1, totalMs) * 100)}%`, top: 0, width: 2, height: 6, background: 'rgba(255,255,255,0.9)'}} />)}
+      </div>
+      {title ? <div style={{fontFamily: FONT_BOLD, fontSize: 20, color: '#fff', textAlign: 'center'}}>{title}</div> : null}
       <span style={{display: 'none'}}>{chapters.length}</span>
     </div>
   );
@@ -79,7 +82,7 @@ function Progress({chapters, timeMs, totalMs, title}: {chapters: {id: string; ti
 
 function PiP({src}: {src: string}) {
   return (
-    <div style={{position: 'absolute', right: 48, bottom: 120, width: '20%', aspectRatio: '1', borderRadius: '50%', overflow: 'hidden', border: '6px solid #fff', boxShadow: `0 0 0 5px ${ORANGE}`}}>
+    <div style={{position: 'absolute', right: 48, bottom: 112, width: 260, aspectRatio: '1', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.9)', boxShadow: '0 10px 30px rgba(0,0,0,0.4)'}}>
       <OffthreadVideo src={src} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
     </div>
   );

@@ -53,7 +53,7 @@ export function FineCutReview({clip, captions, onClose, onApply, onPause}: {clip
   };
   return <dialog ref={dialog} onCancel={onClose} aria-labelledby="fine-cut-title" className="rounded-xl bg-surface text-on-surface p-5 w-[min(880px,96vw)] max-h-[86vh] overflow-auto backdrop:bg-black/60">
     <div className="flex justify-between"><h2 id="fine-cut-title" className="font-bold text-lg">精剪审阅</h2><button type="button" onClick={onClose}>关闭</button></div>
-    <p className="my-2 text-sm">气口收到约 180ms。气口和重说默认待定，起句失败标成待复核，都要接受后才进入成片。试听范围是剪点前后各 1 秒。时间线要等你按生成才会改，并且可以一次撤销。</p>
+    <p className="my-2 text-sm">只收明显拖长的气口：句中长于约 1.05 秒的收到约 0.55 秒，句末标点后长于约 0.85 秒的收到约 0.42 秒。更短的气口和语气词留着。气口和重说默认待定，起句失败标成待复核，都要接受后才进入成片。试听范围是剪点前后各 1 秒。时间线要等你按生成才会改，并且可以一次撤销。</p>
     <audio ref={audio} src={'/' + clip.src} preload="none" />
     {busy && <p role="status">{busy}</p>}
     {error && <p role="alert">{error}</p>}
@@ -70,7 +70,7 @@ export function FineCutReview({clip, captions, onClose, onApply, onPause}: {clip
           <button type="button" onClick={() => setStatus(row.id, 'rejected')}>拒绝</button>
         </div>
       </article>)}
-      {!plan.cutlist.removes.length && <p>这段没有长于 400ms 的气口，也没有发现重说候选。</p>}
+      {!plan.cutlist.removes.length && <p>这段没有明显拖长的气口，也没有发现重说候选。</p>}
       <button type="button" className="lime-button" disabled={!!busy} onClick={() => void render()}>生成精剪到时间线</button>
     </>}
   </dialog>;
