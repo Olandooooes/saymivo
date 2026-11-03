@@ -30,7 +30,7 @@ export type PlanSentence = {
   status?: string;
   timebase?: string;
 };
-export type PlanDocument = {style?: PlanStyle; chapters?: {id: string; title: string; startMs: number; status?: string}[]; sentences: PlanSentence[]; phrases?: {text: string; startMs: number; endMs: number}[]; timebase?: string};
+export type PlanDocument = {style?: PlanStyle; chapters?: {id: string; title: string; startMs: number; status?: string; sourceStartMs?: number}[]; sentences: PlanSentence[]; phrases?: {text: string; startMs: number; endMs: number}[]; warnings?: {code?: string; message?: string; sentenceId?: string}[]; timebase?: string};
 
 export function resolveStyle(style?: Partial<PlanStyle>): PlanStyle;
 export type FrameSize = {width: number; height: number};

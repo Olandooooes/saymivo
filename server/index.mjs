@@ -9,6 +9,7 @@ import {validateStoryboard} from '../src/storyboard.mjs';
 import {missingSceneAssets} from './scene-assets.mjs';
 import {createAutoEditor} from './auto-edit.mjs';
 import {fineCutRoute} from './fine-cut-routes.mjs';
+import {planDraftRoute} from './plan-draft-routes.mjs';
 import {createRetakeAnalyzer,installRetakeShutdown} from './retake-routes.mjs';
 import {createPersonMatteAnalyzer} from './person-matte-routes.mjs';
 import {createDynamicAssetRoute} from './dynamic-asset-routes.mjs';
@@ -170,6 +171,7 @@ const server = createServer(async (req, res) => {
   if (await personMatteAnalyzer.route(req,res,url)) return;
   if (await autoEditor.route(req,res,url)) return;
   if (await fineCutRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
+  if (await planDraftRoute({req,res,url,json,body})) return;
   if (await captionReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await captionTimingReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await visualReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;

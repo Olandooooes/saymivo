@@ -141,6 +141,8 @@ function sentenceSource(sentence, words) {
   return `${sentence.text ?? ''}${own}`;
 }
 
+const fold = text => String(text ?? '').replace(/[，,。！？!?、；;：:\s]/g, '');
+
 function inventedFacts(text, source) {
   const digits = String(text ?? '').match(/\d+(?:\.\d+)?/g) ?? [];
   if (digits.some(digit => !source.includes(digit))) return true;
@@ -206,7 +208,7 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
       return false;
     });
     if (next.punch?.text) {
-      if (!String(next.text ?? '').includes(next.punch.text) || inventedFacts(next.punch.text, source)) {
+      if (!fold(next.text).includes(fold(next.punch.text)) || inventedFacts(next.punch.text, source)) {
         next.status = 'rejected-hallucination';
         issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '大字不在原话里'});
         next.punch = null;
@@ -226,7 +228,7 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
       } else {
         next.slide.items = (next.slide.items ?? []).map(item => {
           const spoken = transcript + (next.text ?? '');
-          if (item.title && (!spoken.includes(item.title) || inventedFacts(item.title, spoken))) {
+          if (item.title && (!fold(spoken).includes(fold(item.title)) || inventedFacts(item.title, spoken))) {
             next.status = 'rejected-hallucination';
             issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '全屏页文字不在原话里'});
             return {...item, status: 'rejected-hallucination'};
