@@ -58,7 +58,7 @@ export function FineCutReview({clip, captions, onClose, onApply, onPause}: {clip
     {busy && <p role="status">{busy}</p>}
     {error && <p role="alert">{error}</p>}
     {plan && <>
-      <p className="text-sm">术语候选 {plan.words.corrections.length} 条，仍是 proposed，不会改词时间。</p>
+      <p className="text-sm">术语候选 {plan.words.corrections.length} 条，仍待定，不会改词时间。</p>
       <div className="flex gap-3 my-3"><button type="button" onClick={acceptPauses}>接受全部气口</button><button type="button" onClick={() => setPlan(current => current && ({...current, cutlist: {...current.cutlist, removes: current.cutlist.removes.map(row => ({...row, status: row.kind === 'false-start' ? 'pending' : 'proposed'}))}}))}>全部改回未决定</button></div>
       {plan.cutlist.removes.map(row => <article key={row.id} className="border border-outline-variant rounded p-3 my-2">
         <p>{label[row.kind] ?? row.kind} · {(row.startMs / 1000).toFixed(2)}–{(row.endMs / 1000).toFixed(2)} 秒 · {row.status === 'accepted' ? '已接受' : row.status === 'rejected' ? '已拒绝' : row.status === 'pending' ? '待复核' : '待定'}</p>

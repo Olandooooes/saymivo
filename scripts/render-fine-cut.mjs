@@ -64,25 +64,41 @@ export function planFromClock({wav, receipt, words, clip, fps = 30, glossary = '
   return {words: document, cutlist, silences, durationSec};
 }
 
-// Integer frame window. Millisecond trim drops or keeps a whole frame whenever
-// the timestamp falls between frame PTS, and those errors stack across cuts.
-export function frameSegments(keeps, fps) {
+export function parseFrameRate(value, fallbackFps = 30) {
+  const [num, den] = String(value ?? '').split('/').map(Number);
+  if (num > 0 && den > 0 && num / den < 1000) return {num, den};
+  return {num: fallbackFps, den: 1};
+}
+
+export function probeFrameRate(file, fallbackFps = 30) {
+  const probe = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=avg_frame_rate,r_frame_rate', '-of', 'json', file], {encoding: 'utf8'});
+  const stream = JSON.parse(probe.stdout || '{}').streams?.[0] ?? {};
+  const raw = stream.avg_frame_rate && stream.avg_frame_rate !== '0/0' ? stream.avg_frame_rate : stream.r_frame_rate;
+  return parseFrameRate(raw, fallbackFps);
+}
+
+// Integer frame window. Nominal 30fps drifts on a source whose real interval
+// is 33.34ms; the index follows the source rational rate.
+export function frameSegments(keeps, fps = 30, rate = null) {
+  const scale = rate?.num > 0 && rate?.den > 0 ? rate : {num: fps, den: 1};
   const segments = [];
   for (const [start, end] of keeps) {
-    const fs = Math.round(start * fps);
-    const fe = Math.round(end * fps);
+    const fs = Math.round(start * scale.num / scale.den);
+    const fe = Math.round(end * scale.num / scale.den);
     if (!(fe > fs)) continue;
     const frames = fe - fs;
-    segments.push({fs, fe, frames, startSec: fs / fps, endSec: fe / fps, durationSec: frames / fps});
+    const startSec = fs * scale.den / scale.num;
+    const endSec = fe * scale.den / scale.num;
+    segments.push({fs, fe, frames, startSec, endSec, durationSec: endSec - startSec});
   }
   return segments;
 }
 
-export function filterGraph(keeps, fps) {
+export function filterGraph(keeps, fps, rate = null) {
   // Audio PTS already include the container delay. Subtracting audioOffsetMs
   // here trims that delay a second time and the soundtrack lands ~offset late.
   // Video and audio of one piece share the same integer frame span.
-  const segments = frameSegments(keeps, fps);
+  const segments = frameSegments(keeps, fps, rate);
   const parts = segments.map((segment, index) => {
     const span = segment.durationSec.toFixed(6);
     const open = segment.startSec.toFixed(6);
@@ -101,8 +117,9 @@ export function renderFineCut({source, cutlist, clip, output, fps = 30}) {
   fs.mkdirSync(path.dirname(output), {recursive: true});
   fs.rmSync(temporary, {force: true});
   fs.rmSync(output, {force: true});
+  const rate = probeFrameRate(source, fps);
   run(ffmpeg(), [
-    '-y', '-i', source, '-filter_complex', filterGraph(keeps, fps),
+    '-y', '-i', source, '-filter_complex', filterGraph(keeps, fps, rate),
     '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
     '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', temporary,
   ]);
@@ -111,8 +128,8 @@ export function renderFineCut({source, cutlist, clip, output, fps = 30}) {
   fs.rmSync(temporary, {force: true});
   const measured = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
   const duration = probeDuration(output);
-  const expected = frameSegments(keeps, fps).reduce((sum, segment) => sum + segment.durationSec, 0);
-  return {output, keeps, durationSec: duration, expectedSec: expected, loudness: measured.applied ?? measured.analysis, sync: syncAtCuts(output, keeps, fps)};
+  const expected = frameSegments(keeps, fps, rate).reduce((sum, segment) => sum + segment.durationSec, 0);
+  return {output, keeps, durationSec: duration, expectedSec: expected, loudness: measured.applied ?? measured.analysis, sync: syncAtCuts(output, keeps, fps, rate)};
 }
 
 function probeDuration(file) {
@@ -132,20 +149,31 @@ function nearestTime(times, target) {
   return times.reduce((best, value) => Math.abs(value - target) < Math.abs(best - target) ? value : best);
 }
 
-export function syncAtCuts(file, keeps, fps) {
+export function decodedAudioDuration(file) {
+  const probed = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=sample_rate,duration', '-of', 'json', file], {encoding: 'utf8'}).stdout || '{}');
+  const audio = probed.streams?.[0];
+  const rate = Number(audio?.sample_rate) || 48000;
+  const decoded = spawnSync(ffmpeg(), ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-f', 's16le', 'pipe:1'], {maxBuffer: 64 * 1024 * 1024});
+  if (decoded.status !== 0 || !decoded.stdout?.length) return Number(audio?.duration);
+  return (decoded.stdout.length / 2) / rate;
+}
+
+export function syncAtCuts(file, keeps, fps, rate = null) {
   const probed = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,start_time,duration,nb_frames', '-of', 'json', file], {encoding: 'utf8'}).stdout);
   const video = probed.streams?.find(stream => stream.codec_type === 'video');
   const audio = probed.streams?.find(stream => stream.codec_type === 'audio');
   const startDelta = Number(video?.start_time) - Number(audio?.start_time);
-  const durationDelta = Number(video?.duration) - Number(audio?.duration);
-  const segments = frameSegments(keeps, fps);
+  const frames = videoFrameTimes(file);
+  const videoDuration = frames.length > 1 ? frames.at(-1) + (frames.at(-1) - frames.at(-2)) : Number(video?.duration);
+  const audioDuration = decodedAudioDuration(file);
+  const durationDelta = videoDuration - audioDuration;
+  const segments = frameSegments(keeps, fps, rate);
   const joins = [];
   let cursor = 0;
   segments.forEach((segment, index) => {
     cursor += segment.durationSec;
     if (index < segments.length - 1) joins.push(cursor);
   });
-  const frames = videoFrameTimes(file);
   const rows = joins.map(time => {
     const audioPts = packetTime(file, 'a', time);
     const videoPts = nearestTime(frames, time);
@@ -158,7 +186,7 @@ export function syncAtCuts(file, keeps, fps) {
   const frame = 1 / fps;
   const close = delta => delta != null && Math.abs(delta) <= frame + 1e-4;
   return {
-    startDeltaSec: startDelta, durationDeltaSec: durationDelta, joins: rows,
+    startDeltaSec: startDelta, durationDeltaSec: durationDelta, videoDurationSec: videoDuration, audioDurationSec: audioDuration, joins: rows,
     videoFrames: frames.length || Number(video?.nb_frames) || 0,
     withinOneFrame: Math.abs(startDelta) <= frame + 1e-4 && Math.abs(durationDelta) <= frame + 1e-4 && rows.every(row => close(row.audioDeltaSec) && close(row.videoDeltaSec)),
   };

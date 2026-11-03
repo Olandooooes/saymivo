@@ -294,33 +294,47 @@ function firstKeptWord(candidate, speech) {
   return speech.find(word => word.startMs / 1000 >= retain - 0.001) ?? null;
 }
 
-function forwardQuietSec(floorSec, hardEndSec, samples, sampleRate, thresholdRms) {
-  if (!samples || !sampleRate) return floorSec;
-  const win = Math.max(1, Math.round(0.02 * sampleRate));
-  const startIndex = Math.max(0, Math.floor(floorSec * sampleRate));
-  const limit = Math.min(samples.length - win, Math.ceil((hardEndSec ?? floorSec) * sampleRate));
-  for (let index = startIndex; index <= limit; index += Math.max(1, Math.floor(win / 2))) {
-    let energy = 0;
-    const count = Math.min(win, samples.length - index);
-    if (count < win / 2) break;
-    for (let offset = 0; offset < count; offset++) {
-      const value = samples[index + offset] / 32768;
-      energy += value * value;
-    }
-    if (Math.sqrt(energy / count) >= thresholdRms) continue;
-    let best = index;
-    let bestAbs = Infinity;
-    for (let offset = 0; offset < count; offset++) {
-      const level = Math.abs(samples[index + offset]);
-      if (level < bestAbs) { bestAbs = level; best = index + offset; }
-    }
-    return Math.max(floorSec, best / sampleRate);
+function windowRmsAt(samples, index, win) {
+  const count = Math.min(win, samples.length - index);
+  if (count <= 0) return 0;
+  let energy = 0;
+  for (let offset = 0; offset < count; offset++) {
+    const value = samples[index + offset] / 32768;
+    energy += value * value;
   }
-  return floorSec;
+  return Math.sqrt(energy / count);
 }
 
-function frameAtOrAfter(sec, fps) {
-  return Math.ceil(sec * fps - 1e-6) / fps;
+// The speech in front of a dip can cross a Whisper word. Walk back through it
+// and stop at the first silence of at least 40ms, which is the kept phrase.
+function speechRunStart(dipStartSec, samples, sampleRate, thresholdRms) {
+  if (!samples?.length || !sampleRate) return Math.max(0, dipStartSec);
+  const win = Math.max(1, Math.round(0.01 * sampleRate));
+  let index = Math.min(samples.length - win, Math.floor(dipStartSec * sampleRate));
+  let lastSpeech = null;
+  while (index >= 0) {
+    if (windowRmsAt(samples, index, win) >= thresholdRms) lastSpeech = index;
+    else if (lastSpeech != null && (lastSpeech - index) / sampleRate >= 0.04) return lastSpeech / sampleRate;
+    index -= win;
+  }
+  return lastSpeech == null ? Math.max(0, dipStartSec) : lastSpeech / sampleRate;
+}
+
+function snapRunStart(speechStartSec, samples, sampleRate, fps) {
+  const back = 0.03;
+  const from = Math.max(0, speechStartSec - back);
+  const lo = Math.floor(from * sampleRate);
+  const hi = Math.min(samples.length - 1, Math.floor(speechStartSec * sampleRate));
+  let best = lo;
+  let bestAbs = Infinity;
+  for (let index = lo; index <= hi; index++) {
+    const level = Math.abs(samples[index] ?? 0);
+    if (level < bestAbs) { bestAbs = level; best = index; }
+  }
+  let sec = Math.round((best / sampleRate) * fps) / fps;
+  if (sec > speechStartSec + 1e-4) sec = Math.floor(speechStartSec * fps) / fps;
+  if (sec < from - 1e-4) sec = Math.ceil((from - 1e-6) * fps) / fps;
+  return Math.max(0, sec);
 }
 
 function snapRemoval(startSec, endSec, {samples, sampleRate, fps, hardEndSec}) {
@@ -402,15 +416,10 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
     // Breath clears the silence gate, and a trailing or fully quiet token is a pause.
     if (!(bothSides && dip.msPerChar >= 450 && dip.word.endMs - dip.word.startMs >= 600 && dip.duration >= 0.12)) continue;
     const resume = dip.endSec;
-    const ordered = [...speech].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
-    const place = ordered.findIndex(item => item === dip.word);
-    const previous = place > 0 ? ordered[place - 1] : null;
-    const floorSec = Math.max(dip.word.startMs / 1000, previous ? previous.endMs / 1000 : 0);
-    const quiet = forwardQuietSec(floorSec, resume, samples, sampleRate, dip.threshold);
-    let start = frameAtOrAfter(Math.max(floorSec, quiet), fps);
+    const runStart = speechRunStart(dip.startSec, samples, sampleRate, dip.threshold);
+    const start = snapRunStart(runStart, samples, sampleRate, fps);
     const [, end] = snapRemoval(start, dip.endSec, {samples, sampleRate, fps, hardEndSec: resume});
-    if (start < floorSec) start = frameAtOrAfter(floorSec, fps);
-    if (!(end - start > 0.05) || end * 1000 > dip.word.endMs || start * 1000 + 1 < Math.round(floorSec * 1000)) continue;
+    if (!(end - start > 0.05) || end * 1000 > dip.word.endMs) continue;
     if (removes.some(row => row.kind === 'false-start' && Math.abs(row.startMs - start * 1000) < 200)) continue;
     removes.push({
       id: `false-in-${dip.word.startMs}`, kind: 'false-start',
