@@ -149,34 +149,46 @@ export function wordGaps(words, clip) {
   return gaps;
 }
 
-// Room tone often sits just above a fixed -42 dB gate. Threshold follows the
-// measured speech level so a -41 dB pause still opens.
-export function adaptiveSilenceRanges(samples, sampleRate) {
+function rmsWindows(samples, sampleRate) {
   const win = Math.round(0.02 * sampleRate);
-  if (!samples || win < 1 || samples.length < win * 10) return [];
-  const rms = [];
+  if (!samples || win < 1 || samples.length < win) return [];
+  const levels = [];
   for (let index = 0; index + win <= samples.length; index += win) {
     let energy = 0;
     for (let offset = 0; offset < win; offset++) {
       const value = samples[index + offset] / 32768;
       energy += value * value;
     }
-    rms.push(Math.sqrt(energy / win));
+    levels.push({startSec: index / sampleRate, endSec: (index + win) / sampleRate, rms: Math.sqrt(energy / win)});
   }
-  const audible = rms.filter(value => value > 1e-4).sort((a, b) => a - b);
-  if (audible.length < 8) return [];
-  const noise = audible[Math.floor(audible.length * 0.12)];
-  const speech = audible[Math.floor(audible.length * 0.8)];
-  if (!(speech > noise * 1.5)) return [];
-  const threshold = Math.max(noise * 1.6, speech * 10 ** (-18 / 20));
+  return levels;
+}
+
+// One speech reference for the whole clip. A word that is mostly silence
+// cannot supply this: its own percentile is the room tone.
+export function clipSpeechReference(samples, sampleRate) {
+  const levels = rmsWindows(samples, sampleRate);
+  const all = levels.map(level => level.rms).sort((a, b) => a - b);
+  if (all.length < 8) return null;
+  const noise = all[Math.floor(all.length * 0.2)];
+  const speech = all[Math.floor(all.length * 0.9)];
+  if (!(speech > Math.max(noise * 3, 0.01))) return null;
+  return {speech, noise, threshold: Math.max(noise * 1.6, speech * 10 ** (-18 / 20))};
+}
+
+// Room tone often sits just above a fixed -42 dB gate. Threshold follows the
+// measured speech level so a -41 dB pause still opens.
+export function adaptiveSilenceRanges(samples, sampleRate) {
+  const reference = clipSpeechReference(samples, sampleRate);
+  const levels = rmsWindows(samples, sampleRate);
+  if (!reference || !levels.length) return [];
   const gaps = [];
   let start = null;
-  rms.forEach((level, index) => {
-    const time = index * win / sampleRate;
-    if (level < threshold) { if (start == null) start = time; }
-    else if (start != null) { if (time - start >= PAUSE_MIN_SEC) gaps.push([start, time]); start = null; }
-  });
-  const end = rms.length * win / sampleRate;
+  for (const level of levels) {
+    if (level.rms < reference.threshold) { if (start == null) start = level.startSec; }
+    else if (start != null) { if (level.startSec - start >= PAUSE_MIN_SEC) gaps.push([start, level.startSec]); start = null; }
+  }
+  const end = levels.at(-1).endSec;
   if (start != null && end - start >= PAUSE_MIN_SEC) gaps.push([start, end]);
   return gaps;
 }
@@ -210,47 +222,42 @@ function shortFalseStarts(words) {
   return found;
 }
 
-function windowLevels(samples, sampleRate, startSample, endSample) {
-  const win = Math.max(1, Math.round(0.02 * sampleRate));
-  const levels = [];
-  const stop = Math.min(samples.length, endSample);
-  for (let index = Math.max(0, startSample); index + win <= stop; index += win) {
-    let energy = 0;
-    for (let offset = 0; offset < win; offset++) {
-      const value = samples[index + offset] / 32768;
-      energy += value * value;
-    }
-    levels.push({startSec: index / sampleRate, endSec: (index + win) / sampleRate, rms: Math.sqrt(energy / win)});
+function loudDuration(levels, threshold, fromSec, toSec) {
+  let total = 0;
+  for (const level of levels) {
+    if (level.endSec <= fromSec || level.startSec >= toSec || level.rms < threshold) continue;
+    total += Math.min(level.endSec, toSec) - Math.max(level.startSec, fromSec);
   }
-  return levels;
+  return total;
 }
 
-// Whisper often stretches one token across a breath. The dip is measured,
-// not inferred from a particular sentence.
+// Whisper often stretches one token across a breath. The gate is the clip's
+// speech level. A word-local percentile treats a mostly silent token as loud.
 export function energyGapsInsideWords(words, samples, sampleRate) {
-  if (!samples || !sampleRate) return [];
+  const reference = clipSpeechReference(samples, sampleRate);
+  if (!reference) return [];
+  const levels = rmsWindows(samples, sampleRate);
   const found = [];
   for (const word of words) {
     const chars = Math.max(1, plain(word.text).length);
     const spanSec = (word.endMs - word.startMs) / 1000;
-    const levels = windowLevels(samples, sampleRate, Math.floor(word.startMs / 1000 * sampleRate), Math.ceil(word.endMs / 1000 * sampleRate));
-    const audible = levels.map(level => level.rms).filter(value => value > 1e-5).sort((a, b) => a - b);
-    if (audible.length < 6) continue;
-    const loud = audible[Math.floor(audible.length * 0.75)];
-    const gate = loud * 10 ** (-10 / 20);
+    const inside = levels.filter(level => level.endSec > word.startMs / 1000 && level.startSec < word.endMs / 1000);
     let run = null;
     const runs = [];
-    for (const level of levels) {
-      if (level.rms < gate) {
-        if (!run) run = {startSec: level.startSec, endSec: level.endSec};
+    for (const level of inside) {
+      if (level.rms < reference.threshold) {
+        if (!run) run = {startSec: Math.max(level.startSec, word.startMs / 1000), endSec: level.endSec};
         else run.endSec = level.endSec;
       } else if (run) { runs.push(run); run = null; }
     }
     if (run) runs.push(run);
     for (const region of runs) {
+      region.endSec = Math.min(region.endSec, word.endMs / 1000);
       const duration = region.endSec - region.startSec;
       if (duration < 0.12) continue;
-      found.push({...region, duration, word, msPerChar: spanSec / chars * 1000});
+      const speechBefore = loudDuration(inside, reference.threshold, word.startMs / 1000, region.startSec);
+      const speechAfter = loudDuration(inside, reference.threshold, region.endSec, word.endMs / 1000);
+      found.push({...region, duration, word, speechBefore, speechAfter, msPerChar: spanSec / chars * 1000});
     }
   }
   return found;
@@ -330,7 +337,7 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
       endMs: Math.round(end * 1000),
       reason: candidate.reason,
       evidence: [candidate.earlier?.text, candidate.retain?.text].filter(Boolean),
-      status: 'proposed',
+      status: falseStart ? 'pending' : 'proposed',
     });
   }
   for (const candidate of shortFalseStarts(speech)) {
@@ -340,29 +347,34 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
     if (removes.some(row => row.kind !== 'pause' && Math.abs(row.startMs - start * 1000) < 200)) continue;
     removes.push({
       id, kind: 'false-start', startMs: Math.round(start * 1000), endMs: Math.round(end * 1000),
-      reason: '短起句失败，后句接着同一开头', evidence: [candidate.earlier, candidate.later], status: 'proposed',
+      reason: '短起句失败，后句接着同一开头', evidence: [candidate.earlier, candidate.later], status: 'pending',
     });
   }
   for (const dip of energyGapsInsideWords(speech, samples, sampleRate)) {
+    const bothSides = dip.speechBefore >= 0.08 && dip.speechAfter >= 0.08;
     if (dip.duration >= PAUSE_MIN_SEC) {
-      const [start, end] = snapRemoval(dip.startSec + PAUSE_BREATH_SEC / 2, dip.endSec - PAUSE_BREATH_SEC / 2, {samples, sampleRate, fps, hardEndSec: dip.endSec - PAUSE_BREATH_SEC / 2});
+      const [start, end] = snapRemoval(dip.startSec + PAUSE_BREATH_SEC / 2, dip.endSec - PAUSE_BREATH_SEC / 2, {samples, sampleRate, fps, hardEndSec: dip.endSec - 0.02});
       if (end - start > 0.05 && !removes.some(row => row.kind === 'pause' && start * 1000 < row.endMs && end * 1000 > row.startMs)) {
         removes.push({
           id: `pause-in-${Math.round(dip.startSec * 1000)}`, kind: 'pause',
           startMs: Math.round(start * 1000), endMs: Math.round(end * 1000), keepMs: Math.round(PAUSE_BREATH_SEC * 1000),
-          reason: '词时间盖住了中间的气口，按能量把这段收成约 180ms',
+          reason: '词时间盖住了中间的气口，按整段人声电平把这段收成约 180ms',
           evidence: [dip.word.text], status: 'proposed',
         });
       }
     }
-    const slow = dip.msPerChar >= 450 && dip.word.endMs - dip.word.startMs >= 600 && dip.duration >= 0.12;
-    if (!slow) continue;
-    const endMs = Math.round(dip.endSec * 1000);
-    if (removes.some(row => row.kind === 'false-start' && Math.abs(row.startMs - dip.word.startMs) < 200)) continue;
+    // Only speech–dip–speech inside one token is a possible restart.
+    // A trailing breath or a fully quiet token is a pause, not a false start.
+    if (!(bothSides && dip.msPerChar >= 450 && dip.word.endMs - dip.word.startMs >= 600 && dip.duration >= 0.12)) continue;
+    const resume = dip.endSec;
+    const [start, end] = snapRemoval(dip.word.startMs / 1000, dip.endSec, {samples, sampleRate, fps, hardEndSec: resume});
+    if (!(end - start > 0.05) || end * 1000 > dip.word.endMs) continue;
+    if (removes.some(row => row.kind === 'false-start' && Math.abs(row.startMs - start * 1000) < 200)) continue;
     removes.push({
-      id: `false-in-${dip.word.startMs}`, kind: 'false-start', startMs: dip.word.startMs, endMs,
-      reason: '这个词相对字数偏长，中间有一段明显变轻，可能是起句失败并进了同一个词',
-      evidence: [dip.word.text], status: 'proposed',
+      id: `false-in-${dip.word.startMs}`, kind: 'false-start',
+      startMs: Math.round(start * 1000), endMs: Math.round(end * 1000),
+      reason: '这个词相对字数偏长，轻声两边都还有人声，可能是起句失败并进了同一个词',
+      evidence: [dip.word.text], status: 'pending',
     });
   }
   return {

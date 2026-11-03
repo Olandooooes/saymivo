@@ -84,7 +84,7 @@ test('a retake cut stops before 只 and never ends inside that kept word', () =>
   assert.ok(retake, JSON.stringify(cutlist.removes));
   assert.ok(retake.endMs <= zhi.startMs, JSON.stringify(retake));
   assert.ok(retake.endMs > zhi.startMs - 40, JSON.stringify(retake));
-  assert.equal(retake.status, 'proposed');
+  assert.equal(retake.status, retake.kind === 'false-start' ? 'pending' : 'proposed');
   const accepted = {...cutlist, removes: cutlist.removes.map(row => row.id === retake.id ? {...row, status: 'accepted'} : row)};
   const keeps = keepRanges(clip, accepted.removes);
   assert.ok(projectSourceMs(zhi.startMs, keeps) != null);
@@ -108,10 +108,130 @@ test('a long word with an internal dip is a reviewable false start, without a sc
   });
   const hit = cutlist.removes.find(row => row.kind === 'false-start');
   assert.ok(hit, JSON.stringify(cutlist.removes));
-  assert.equal(hit.status, 'proposed');
+  assert.equal(hit.status, 'pending');
   assert.equal(hit.evidence[0], '回');
   assert.ok(hit.endMs < 1100);
-  assert.match(hit.reason, /同一个词/);
+  assert.ok(Math.abs(hit.endMs - Math.round(hit.endMs / 1000 * 30) / 30 * 1000) <= 1, hit.endMs);
+  assert.match(hit.reason, /两边都还有人声/);
+});
+
+function onFrame(ms) {
+  return Math.abs(ms - Math.round(ms / 1000 * 30) / 30 * 1000) <= 1;
+}
+
+function tone(length, rate, loud, from, to) {
+  const samples = new Int16Array(length);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const amp = time >= from && time < to ? loud : loud / 40;
+    samples[index] = Math.round(amp * Math.sin(2 * Math.PI * 220 * time));
+  }
+  return samples;
+}
+
+test('a word that is mostly silence still yields a pause against the clip speech level', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const samples = new Int16Array(rate * 8);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const speaking = time < 6 || (time >= 6 && time < 6.15);
+    samples[index] = Math.round((speaking ? loud : loud / 40) * Math.sin(2 * Math.PI * 200 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [{text: '大家', startMs: 6000, endMs: 7440}],
+    clip: {id: 'talk', src: 'clips/talk.mp4', inSec: 0, outSec: 8},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  const pause = cutlist.removes.find(row => row.kind === 'pause' && row.endMs - row.startMs > 800);
+  assert.ok(pause, JSON.stringify(cutlist.removes));
+  assert.equal(cutlist.removes.some(row => row.kind === 'false-start'), false);
+});
+
+test('a trailing pause inside a word is a pause and does not clip the syllable', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const samples = new Int16Array(rate * 4);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const speaking = time < 2 || (time >= 2.2 && time < 2.4);
+    samples[index] = Math.round((speaking ? loud : loud / 40) * Math.sin(2 * Math.PI * 180 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [{text: '什么', startMs: 2200, endMs: 3100}],
+    clip: {id: 'talk', src: 'clips/talk.mp4', inSec: 0, outSec: 4},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  assert.equal(cutlist.removes.some(row => row.kind === 'false-start'), false, JSON.stringify(cutlist.removes));
+  const pause = cutlist.removes.find(row => row.kind === 'pause' && row.startMs >= 2350);
+  assert.ok(pause, JSON.stringify(cutlist.removes));
+});
+
+test('speech immediately before a dip is not a false start when nothing follows inside the word', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const samples = new Int16Array(rate * 4);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const speaking = time < 2 || (time >= 2.5 && time < 2.7);
+    samples[index] = Math.round((speaking ? loud : loud / 40) * Math.sin(2 * Math.PI * 190 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [{text: '求', startMs: 2500, endMs: 3300}],
+    clip: {id: 'talk', src: 'clips/talk.mp4', inSec: 0, outSec: 4},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  assert.equal(cutlist.removes.some(row => row.kind === 'false-start'), false, JSON.stringify(cutlist.removes));
+  const pause = cutlist.removes.find(row => row.kind === 'pause' && row.startMs >= 2650);
+  assert.ok(pause, JSON.stringify(cutlist.removes));
+  assert.equal(cutlist.removes.some(row => row.startMs < 2650 && row.endMs > 2520), false, JSON.stringify(cutlist.removes));
+});
+
+test('a fully quiet word is a pause shrink, not a false start', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const samples = new Int16Array(rate * 5);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const speaking = time < 2 || time >= 4;
+    samples[index] = Math.round((speaking ? loud : loud / 40) * Math.sin(2 * Math.PI * 210 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [{text: '走', startMs: 2200, endMs: 3400}],
+    clip: {id: 'talk', src: 'clips/talk.mp4', inSec: 0, outSec: 5},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  assert.equal(cutlist.removes.some(row => row.kind === 'false-start'), false, JSON.stringify(cutlist.removes));
+  const pause = cutlist.removes.find(row => row.kind === 'pause' && row.startMs >= 2100 && row.endMs <= 3600);
+  assert.ok(pause, JSON.stringify(cutlist.removes));
+});
+
+test('an in-word false start is pending and its edges sit on frames', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const samples = new Int16Array(rate * 3);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    const speaking = time >= 1.3 || (time >= 0.05 && time < 0.22) || (time >= 0.72 && time < 1.05);
+    samples[index] = Math.round((speaking ? loud : 0) * Math.sin(2 * Math.PI * 240 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [{text: '回', startMs: 40, endMs: 1100}],
+    clip: {id: 'take', src: 'clips/take.mp4', inSec: 0, outSec: 2},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  const hit = cutlist.removes.find(row => row.kind === 'false-start');
+  assert.ok(hit, JSON.stringify(cutlist.removes));
+  assert.equal(hit.status, 'pending');
+  assert.ok(onFrame(hit.startMs), hit.startMs);
+  assert.ok(onFrame(hit.endMs), hit.endMs);
+  assert.ok(hit.startMs <= 80, hit.startMs);
+  assert.ok(hit.endMs <= 720, hit.endMs);
+  const clip = {inSec: 0, outSec: 2};
+  assert.deepEqual(keepRanges(clip, cutlist.removes), [[0, 2]]);
+  const accepted = keepRanges(clip, cutlist.removes.map(row => row.id === hit.id ? {...row, status: 'accepted'} : row));
+  assert.equal(projectSourceMs(100, accepted), null);
+  assert.ok(projectSourceMs(800, accepted) != null);
 });
 
 test('silence folded into a word duration is still proposed as a pause', () => {
