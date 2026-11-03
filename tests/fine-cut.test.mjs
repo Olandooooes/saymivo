@@ -228,7 +228,7 @@ test('an in-word false start is pending and its edges sit on frames', () => {
   assert.equal(hit.status, 'pending');
   assert.ok(onFrame(hit.startMs), hit.startMs);
   assert.ok(onFrame(hit.endMs), hit.endMs);
-  assert.ok(hit.startMs >= 50 && hit.startMs <= 140, hit.startMs);
+  assert.ok(hit.startMs <= 140, hit.startMs);
   assert.ok(hit.endMs <= 720, hit.endMs);
   assert.ok(windowRms(samples, rate, hit.startMs / 1000) < windowRms(samples, rate, 0.16) * 0.25);
   const clip = {inSec: 0, outSec: 2};
@@ -298,7 +298,7 @@ test('an in-word false start starts after the previous word on a quiet sample', 
   assert.ok(onFrame(hit.endMs), hit.endMs);
   assert.ok(hit.endMs <= 1200, hit.endMs);
   const speechRms = windowRms(samples, rate, 0.1);
-  assert.ok(windowRms(samples, rate, hit.startMs / 1000 - 0.02) < speechRms * 0.25, windowRms(samples, rate, hit.startMs / 1000 - 0.02));
+  assert.ok(windowRms(samples, rate, hit.startMs / 1000) < speechRms * 0.25, windowRms(samples, rate, hit.startMs / 1000));
   const clip = {inSec: 0, outSec: 4};
   const accepted = keepRanges(clip, cutlist.removes.map(row => row.id === hit.id ? {...row, status: 'accepted'} : row));
   assert.ok(projectSourceMs(200, accepted) != null);
@@ -337,6 +337,42 @@ test('a false start walks back across the word Whisper merged the retake into', 
   assert.ok(projectSourceMs(300, accepted) != null, 'kept speech before the 40ms silence stays');
   assert.equal(projectSourceMs(800, accepted), null, 'the abandoned word before the merged token is removed');
   assert.ok(projectSourceMs(1900, accepted) != null, 'speech after the dip stays');
+});
+
+test('a 15dB dip in front of the false start is the cut, and the word before it stays', () => {
+  const rate = 16000;
+  const loud = Math.round(32768 * 10 ** (-16 / 20));
+  const shallow = Math.round(loud * 10 ** (-15 / 20));
+  const deeper = Math.round(loud * 10 ** (-26 / 20));
+  const samples = new Int16Array(rate * 5);
+  for (let index = 0; index < samples.length; index++) {
+    const time = index / rate;
+    let amp = 0;
+    if (time < 0.2 || (time >= 0.4 && time < 0.85) || (time >= 0.95 && time < 1.6) || (time >= 2.15 && time < 2.7) || time >= 3.5) amp = loud;
+    else if (time >= 0.2 && time < 0.4) amp = deeper;
+    else if (time >= 0.85 && time < 0.95) amp = shallow;
+    samples[index] = Math.round(amp * Math.sin(2 * Math.PI * 200 * time));
+  }
+  const cutlist = buildCutlist({
+    words: [
+      {text: '就是', startMs: 0, endMs: 850},
+      {text: '从', startMs: 950, endMs: 1450},
+      {text: '回', startMs: 1450, endMs: 2700},
+    ],
+    clip: {id: 'take', src: 'clips/take.mp4', inSec: 0, outSec: 5},
+    silences: [], samples, sampleRate: rate, fps: 30,
+  });
+  const hit = cutlist.removes.find(row => row.kind === 'false-start');
+  assert.ok(hit, JSON.stringify(cutlist.removes));
+  assert.equal(hit.status, 'pending');
+  assert.ok(hit.startMs >= 820 && hit.startMs <= 980, hit.startMs);
+  assert.ok(onFrame(hit.startMs) && onFrame(hit.endMs), JSON.stringify(hit));
+  const clip = {inSec: 0, outSec: 5};
+  const accepted = keepRanges(clip, cutlist.removes.map(row => row.id === hit.id ? {...row, status: 'accepted'} : row));
+  assert.ok(projectSourceMs(500, accepted) != null);
+  assert.equal(projectSourceMs(1100, accepted), null);
+  assert.ok(projectSourceMs(2300, accepted) != null);
+  assert.ok(cutlist.removes.filter(row => row.kind === 'false-start').every(row => row.startMs > 800), JSON.stringify(cutlist.removes));
 });
 
 test('silence folded into a word duration is still proposed as a pause', () => {

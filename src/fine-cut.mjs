@@ -305,26 +305,51 @@ function windowRmsAt(samples, index, win) {
   return Math.sqrt(energy / count);
 }
 
-// The speech in front of a dip can cross a Whisper word. Walk back through it
-// and stop at the first silence of at least 40ms, which is the kept phrase.
-function speechRunStart(dipStartSec, samples, sampleRate, thresholdRms) {
-  if (!samples?.length || !sampleRate) return Math.max(0, dipStartSec);
-  const win = Math.max(1, Math.round(0.01 * sampleRate));
-  let index = Math.min(samples.length - win, Math.floor(dipStartSec * sampleRate));
-  let lastSpeech = null;
-  while (index >= 0) {
-    if (windowRmsAt(samples, index, win) >= thresholdRms) lastSpeech = index;
-    else if (lastSpeech != null && (lastSpeech - index) / sampleRate >= 0.04) return lastSpeech / sampleRate;
-    index -= win;
-  }
-  return lastSpeech == null ? Math.max(0, dipStartSec) : lastSpeech / sampleRate;
+function neighborBefore(word, speech) {
+  const ordered = [...speech].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+  const place = ordered.findIndex(item => item === word);
+  return place > 0 ? ordered[place - 1] : null;
 }
 
-function snapRunStart(speechStartSec, samples, sampleRate, fps) {
-  const back = 0.03;
-  const from = Math.max(0, speechStartSec - back);
-  const lo = Math.floor(from * sampleRate);
-  const hi = Math.min(samples.length - 1, Math.floor(speechStartSec * sampleRate));
+// Do not walk earlier than the previous word's onset. A shallow dip in front of
+// that word is still the false-start boundary even when it never reaches silence.
+function falseStartFloor(word, speech) {
+  const previous = neighborBefore(word, speech);
+  const origin = previous ? previous.startMs : word.startMs;
+  return Math.max(0, origin / 1000 - 0.06);
+}
+
+function relativeDipStart(floorSec, dipStartSec, samples, sampleRate) {
+  if (!samples?.length || !(dipStartSec > floorSec + 0.02)) return floorSec;
+  const win = Math.max(1, Math.round(0.01 * sampleRate));
+  const lo = Math.max(0, Math.floor(floorSec * sampleRate));
+  const hi = Math.min(samples.length - win, Math.floor(dipStartSec * sampleRate));
+  const levels = [];
+  for (let index = lo; index <= hi; index += win) levels.push({sec: index / sampleRate, rms: windowRmsAt(samples, index, win)});
+  const peak = levels.reduce((best, level) => Math.max(best, level.rms), 0);
+  const gate = peak * 10 ** (-10 / 20);
+  if (!(peak > gate)) return floorSec;
+  let best = null;
+  let run = null;
+  const finish = () => {
+    if (!run || run.endSec - run.startSec < 0.03) return;
+    if (!best || run.min < best.min - 1e-9 || (Math.abs(run.min - best.min) <= 1e-9 && run.startSec > best.startSec)) best = run;
+  };
+  for (const level of levels) {
+    if (level.rms <= gate) {
+      if (!run) run = {startSec: level.sec, endSec: level.sec + win / sampleRate, min: level.rms};
+      else { run.endSec = level.sec + win / sampleRate; run.min = Math.min(run.min, level.rms); }
+    } else if (run) { finish(); run = null; }
+  }
+  finish();
+  return best ? best.startSec : floorSec;
+}
+
+function snapRunStart(speechStartSec, samples, sampleRate, fps, floorSec = 0) {
+  const from = Math.max(0, floorSec, speechStartSec);
+  const to = from + 0.03;
+  const lo = Math.min(samples.length - 1, Math.floor(from * sampleRate));
+  const hi = Math.min(samples.length - 1, Math.max(lo, Math.floor(to * sampleRate)));
   let best = lo;
   let bestAbs = Infinity;
   for (let index = lo; index <= hi; index++) {
@@ -332,9 +357,21 @@ function snapRunStart(speechStartSec, samples, sampleRate, fps) {
     if (level < bestAbs) { bestAbs = level; best = index; }
   }
   let sec = Math.round((best / sampleRate) * fps) / fps;
-  if (sec > speechStartSec + 1e-4) sec = Math.floor(speechStartSec * fps) / fps;
+  if (sec > to + 1e-4) sec = Math.floor((to + 1e-4) * fps) / fps;
   if (sec < from - 1e-4) sec = Math.ceil((from - 1e-6) * fps) / fps;
   return Math.max(0, sec);
+}
+
+function keepWholeWords(startSec, endSec, marked, previous, speech) {
+  let start = startSec;
+  for (const word of speech) {
+    if (word === marked || word === previous) continue;
+    const open = word.startMs / 1000;
+    const close = word.endMs / 1000;
+    if (close - open < 0.02) continue;
+    if (start <= open + 0.005 && endSec >= close - 0.005) start = Math.max(start, close);
+  }
+  return start;
 }
 
 function snapRemoval(startSec, endSec, {samples, sampleRate, fps, hardEndSec}) {
@@ -416,9 +453,13 @@ export function buildCutlist({words, clip, silences = [], samples, sampleRate, f
     // Breath clears the silence gate, and a trailing or fully quiet token is a pause.
     if (!(bothSides && dip.msPerChar >= 450 && dip.word.endMs - dip.word.startMs >= 600 && dip.duration >= 0.12)) continue;
     const resume = dip.endSec;
-    const runStart = speechRunStart(dip.startSec, samples, sampleRate, dip.threshold);
-    const start = snapRunStart(runStart, samples, sampleRate, fps);
+    const previous = neighborBefore(dip.word, speech);
+    const floorSec = falseStartFloor(dip.word, speech);
+    const anchor = relativeDipStart(floorSec, dip.startSec, samples, sampleRate);
+    let start = snapRunStart(anchor, samples, sampleRate, fps, floorSec);
     const [, end] = snapRemoval(start, dip.endSec, {samples, sampleRate, fps, hardEndSec: resume});
+    const guarded = keepWholeWords(start, end, dip.word, previous, speech);
+    if (guarded > start + 1e-3) start = snapRunStart(guarded, samples, sampleRate, fps, guarded);
     if (!(end - start > 0.05) || end * 1000 > dip.word.endMs) continue;
     if (removes.some(row => row.kind === 'false-start' && Math.abs(row.startMs - start * 1000) < 200)) continue;
     removes.push({
