@@ -1,5 +1,6 @@
 import {regenerateCaptions} from '../src/regenerate-captions.mjs';
 import {PauseReviewDialog} from './PauseReviewDialog';
+import {FineCutReview} from './FineCutReview';
 import type {AutocutPlan} from '../src/apply-autocut-project.mjs';
 import {validateStoryboard} from '../src/storyboard.mjs';
 import {preExportAudit, type PreExportAdvisory} from '../src/pre-export-audit.mjs';
@@ -85,7 +86,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
   const [motionLibraryOpen,setMotionLibraryOpen]=useState(false);
   const {
     meta, projectId, projectName, clips, music, captions, brolls, presentation, accentColor, selectedId, currentFrame, past, future,
-    brollAssets, dupSuggestion, selectedClipId, select, selectClip, setCurrentFrame, setTopPct, setCaptionScale, setBrollScale, setKeyframe, removeKeyframe, setCaptions, setBrolls, setClipOrder, applyAutocut, removeClips, setDupSuggestion, setProjectName, pushHistory, undo, redo,
+    brollAssets, dupSuggestion, selectedClipId, select, selectClip, setCurrentFrame, setTopPct, setCaptionScale, setBrollScale, setKeyframe, removeKeyframe, setCaptions, setBrolls, setClipOrder, applyAutocut, applyFineCut, removeClips, setDupSuggestion, setProjectName, pushHistory, undo, redo,
   } = useEditor();
   const playerRef = useRef<PlayerRef>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -345,6 +346,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
 
   // Auto-trim leading/trailing silence on every clip (uses cached transcripts).
   const [pauseReview,setPauseReview]=useState<{clips:typeof clips;plan:AutocutPlan;signature:string}|null>(null);
+  const [fineCutClip,setFineCutClip]=useState<typeof clips[number]|null>(null);
   const trimSilence = async () => {
     const signature=JSON.stringify({projectId:useEditor.getState().projectId,clips});
     playerRef.current?.pause();
@@ -598,6 +600,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
             <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${trimming ? 'animate-spin' : ''}`}>{trimming ? 'progress_activity' : 'content_cut'}</span>
             {trimming ? (trimLabel || 'Cutting…') : '剪去停顿'}
           </button>
+          <button type="button" onClick={()=>{const chosen=clips.find(c=>c.id===selectedClipId)??clips[0]; if(!chosen)return; playerRef.current?.pause(); setFineCutClip(chosen);}} disabled={!clips.length} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">精剪审阅</button>
           <button type="button" onClick={()=>{playerRef.current?.pause();setRetakeOpen(true);}} disabled={!clips.length||exp?.status==='running'||generating||arranging||trimming} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">口播精剪</button>
           <button type="button" onClick={()=>{playerRef.current?.pause();setMotionLibraryOpen(true);}} disabled={exp?.status==='running'} className="px-3 py-1.5 rounded-lg border border-outline-variant text-body-md font-bold disabled:opacity-40">动效库</button>
           {exp?.status === 'running' && <span aria-hidden="true" className="text-body-sm text-on-surface-variant">Rendering… {exp.progress ?? 0}%</span>}
@@ -639,6 +642,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
       {motionOpen&&<MotionTools onClose={()=>setMotionOpen(false)} seek={f=>{playerRef.current?.seekTo(f);setCurrentFrame(f);}}/>}
       {settingsOpen&&<Settings onClose={()=>setSettingsOpen(false)}/>}
       {motionLibraryOpen&&<MotionLibrary onClose={()=>setMotionLibraryOpen(false)}/>}
+      {fineCutClip&&<FineCutReview clip={fineCutClip} captions={captions} onPause={()=>playerRef.current?.pause()} onClose={()=>setFineCutClip(null)} onApply={result=>{applyFineCut(result);setFineCutClip(null);notify('精剪已放上时间线，可一次撤销恢复。','ok');}}/>}
       {pauseReview&&<PauseReviewDialog clips={pauseReview.clips} plan={pauseReview.plan} onPause={()=>playerRef.current?.pause()} onClose={()=>setPauseReview(null)} onApply={plan=>{
         const now=useEditor.getState();
         if(JSON.stringify({projectId:now.projectId,clips:now.clips})!==pauseReview.signature)throw Error('分析后时间线已改变，请关闭并重新分析。');

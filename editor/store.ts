@@ -57,6 +57,7 @@ type EditorState = {
   setKeyframe: (clipId: string, t: number, tr: {scale: number; x: number; y: number}) => void;
   removeKeyframe: (clipId: string, t: number) => void;
   applyAutocut: (plan: {id: string; segments: {inSec: number; outSec: number}[]}[]) => void;
+  applyFineCut: (next: {replaceId: string; clip: Clip; captions: Caption[]}) => void;
   removeClips: (ids: string[]) => void;
   setDupSuggestion: (ids: string[]) => void;
   selectClip: (id: string | null) => void;
@@ -230,6 +231,13 @@ export const useEditor = create<EditorState>((set) => ({
 
   // autocut: replace clips with their speech segments (ends + internal pauses
   // removed), re-anchoring captions/b-roll to the right segment. One undo step.
+  applyFineCut: ({replaceId, clip, captions}) =>
+    set((s) => {
+      const clips = s.clips.flatMap(item => item.id === replaceId ? [clip] : [item]);
+      const kept = s.captions.filter(caption => caption.clipId !== replaceId);
+      return {...withHistory(s), clips, captions: [...kept, ...captions], meta: withMeta(s.meta, clips), selectedClipId: clip.id, selectedId: null};
+    }),
+
   applyAutocut: (plan) =>
     set((s) => {
       const project=applyAutocutProject(s,plan,s.meta?.fps??30);

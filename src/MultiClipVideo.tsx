@@ -89,7 +89,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
         // source frames consumed = timeline frames × speed (keeps the trimmed
         // span exactly as long as the Sequence — no black tail frame)
         trimAfter={trimBefore + Math.round(durFrames * speed)}
-        acceptableTimeShiftInSeconds={0.5}
+        acceptableTimeShiftInSeconds={1 / fps}
         muted={audioMixer.forceMuteOriginal || silent || clip.muted || (clip.volume ?? 1) === 0}
         volume={audioMixer.forceMuteOriginal || silent || clip.muted ? 0 : clip.volume ?? 1}
         style={{width: '100%', height: '100%', objectFit: clip.fit ?? 'cover', objectPosition: `${framing.x-x}% ${framing.y-y}%`}}

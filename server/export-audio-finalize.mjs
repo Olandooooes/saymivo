@@ -112,7 +112,7 @@ export function createExportAudioFinalizer({ROOT,EXPORTS,runCommand=run}={}){
   try{
    const exportsReal=await fs.promises.realpath(EXPORTS);check(path.dirname(path.resolve(outFile))===exportsReal&&/^edited-[\w-]+\.mp4$/.test(path.basename(outFile)),'导出收尾文件不在当前导出目录。');
    check(args[0]==='remotion'&&args[1]==='render'&&args[2]==='MultiClip'&&args[3]===outFile&&args.includes('--props='+propsFile),'无法确认实际Remotion导出调用。');
-   check(args.slice(4).every(a=>/^--(?:props=|concurrency=\d+$|x264-preset=(?:veryfast|ultrafast)$|offthreadvideo-cache-size-in-bytes=\d+$|scale=0\.5$)/.test(a)),'导出参数已改变音频链，不能自动套用编码填充。');
+   check(args.slice(4).every(a=>/^--(?:props=|concurrency=\d+$|x264-preset=(?:veryfast|ultrafast|medium)$|crf=18|image-format=png|offthreadvideo-cache-size-in-bytes=\d+$|scale=0\.5$)/.test(a)),'导出参数已改变音频链，不能自动套用编码填充。');
    receipt={outFile,exportsReal,propsFile,propsSha256:await hashFile(propsFile),chain:await chain(),args:[...args]};
   }catch(e){receipt={error:e.message};}
   receipts.set(proof,receipt);return proof;

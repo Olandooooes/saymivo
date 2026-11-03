@@ -30,6 +30,7 @@ export type Clip = {
   sourceHeight?: number;
   showCaptions?: boolean; // hides only added caption display, not editable transcription
   focusWindows?: ClipFocusWindow[];
+  fineCut?: boolean; // single FFmpeg clock; cuts are already in the file
 };
 
 const lerp = (a: number, b: number, f: number) => a + (b - a) * f;
