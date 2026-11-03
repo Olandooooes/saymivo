@@ -1,16 +1,22 @@
-// Preserve low-volume speech whenever cached word timings are available.
-export function pauseSegments(clip,gaps,words=[]){
+// Pauses longer than 0.4s shrink to a 0.18s breath. Word ranges stay intact.
+export const PAUSE_BREATH_SEC=0.18;
+export const PAUSE_MIN_SEC=0.4;
+export function pauseSegments(clip,gaps,words=[],pad=0.15){
  const speech=words.filter(w=>w.endMs>clip.inSec*1000&&w.startMs<clip.outSec*1000).sort((a,b)=>a.startMs-b.startMs);
  const cuts=[];
  for(const [a,b] of gaps){
-  let safe=[[Math.max(clip.inSec,a+.12),Math.min(clip.outSec,b-.12)]];
+  let pieces=[[Math.max(clip.inSec,a),Math.min(clip.outSec,b)]].filter(([x,y])=>y>x);
   // A slightly inaccurate boundary must not veto a whole long pause.
-  // Subtract every protected word, then cut only its remaining interior.
+  // Subtract every protected word, then shrink only its remaining interior.
   for(const word of speech){
-   const left=word.startMs/1000-.15,right=word.endMs/1000+.15;
-   safe=safe.flatMap(([x,y])=>right<=x||left>=y?[[x,y]]:[[x,Math.min(y,left)],[Math.max(x,right),y]].filter(([u,v])=>v>u));
+   const left=word.startMs/1000-pad,right=word.endMs/1000+pad;
+   pieces=pieces.flatMap(([x,y])=>right<=x||left>=y?[[x,y]]:[[x,Math.min(y,left)],[Math.max(x,right),y]].filter(([u,v])=>v>u));
   }
-  cuts.push(...safe.filter(([x,y])=>y-x>=.4));
+  for(const [x,y] of pieces){
+   if(y-x<=PAUSE_MIN_SEC)continue;
+   const cutA=x+PAUSE_BREATH_SEC/2,cutB=y-PAUSE_BREATH_SEC/2;
+   if(cutB>cutA+.02)cuts.push([cutA,cutB]);
+  }
  }
  cuts.sort((a,b)=>a[0]-b[0]);const merged=[];
  for(const cut of cuts){const last=merged.at(-1);if(last&&cut[0]<=last[1])last[1]=Math.max(last[1],cut[1]);else merged.push([...cut]);}

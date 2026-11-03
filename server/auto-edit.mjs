@@ -154,7 +154,7 @@ export function createAutoEditor({ROOT,PUBLIC,PROJECTS_DIR,json,body,readEnvFile
     return;
    }
    stage(id,4,input.format==='landscape'?'导出横屏 1080p MP4':'导出竖屏 1080p MP4',63);
-   await command(id,process.execPath,[path.join(ROOT,'node_modules/@remotion/cli/remotion-cli.js'),'render','MultiClip',output,`--props=${path.join(jobDir,'edited.json')}`,'--concurrency=2','--x264-preset=veryfast'],{onText:t=>{for(const m of t.matchAll(/Rendered\s+(\d+)\/(\d+)/g))update(id,{progress:63+Math.floor(+m[1]/+m[2]*28)});for(const m of t.matchAll(/Encoded\s+(\d+)\/(\d+)/g))update(id,{label:'合成画面与原声',progress:91+Math.floor(+m[1]/+m[2]*6)});}});
+   await command(id,process.execPath,[path.join(ROOT,'node_modules/@remotion/cli/remotion-cli.js'),'render','MultiClip',output,`--props=${path.join(jobDir,'edited.json')}`,'--concurrency=2','--x264-preset=medium','--crf=18','--image-format=png'],{onText:t=>{for(const m of t.matchAll(/Rendered\s+(\d+)\/(\d+)/g))update(id,{progress:63+Math.floor(+m[1]/+m[2]*28)});for(const m of t.matchAll(/Encoded\s+(\d+)\/(\d+)/g))update(id,{label:'合成画面与原声',progress:91+Math.floor(+m[1]/+m[2]*6)});}});
    stage(id,5,'检查成片文件',98);
    const info=JSON.parse(await command(id,'ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',output]));
    const video=info.streams?.find(s=>s.codec_type==='video'),audio=info.streams?.find(s=>s.codec_type==='audio');

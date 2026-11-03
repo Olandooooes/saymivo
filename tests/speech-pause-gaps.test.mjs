@@ -5,7 +5,8 @@ test('speech activity proposes interior pauses with extra headroom and guards de
  const report={durationSec:128,speech:[[3.528,6.552],[7.112,87.768],[100.488,125.56]]};
  const gaps=speechPauseGaps(report);assert(gaps.some(([a,b])=>a>87&&b<101&&b-a>12));
  const segments=pauseSegments({inSec:0,outSec:128},gaps,[{startMs:3730,endMs:6990},{startMs:100390,endMs:125650}]);
- assert(segments[0].inSec<=3.3);assert(segments.at(-1).outSec>=125.65);
+ // Leading silence is shrunk to a breath, and the protected onset at 3.73s stays inside a kept segment.
+ assert(segments[0].inSec<3.73-0.12);assert(segments[0].inSec>2);assert(segments.at(-1).outSec>=125.65);
 });
 test('missing, empty or invalid speech activity cannot delete an entire source',()=>{
  for(const report of [null,{durationSec:10,speech:[]},{durationSec:10,speech:[[5,4]]},{durationSec:10,speech:[[0,Infinity]]}])assert.deepEqual(speechPauseGaps(report),[]);

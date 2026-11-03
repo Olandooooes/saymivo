@@ -11,6 +11,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('source', nargs='?')
     parser.add_argument('--clocked-wav')
+    parser.add_argument('--min-silence-ms', type=int, default=650)
     args = parser.parse_args()
     if bool(args.source) == bool(args.clocked_wav):
         parser.error('Provide a source OR --clocked-wav with its clock receipt')
@@ -22,7 +23,7 @@ def main():
         import numpy as np
         from faster_whisper.vad import VadOptions, get_speech_timestamps
         audio = np.frombuffer(pcm, dtype='<i2').astype(np.float32) / 32768.0
-        regions = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=650, speech_pad_ms=120))
+        regions = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=max(40, args.min_silence_ms), speech_pad_ms=120))
         print(json.dumps({'durationSec': len(audio) / 16000,
             'speech': [[r['start'] / 16000, r['end'] / 16000] for r in regions],
             'audioClock': receipt, 'wavRetained': bool(args.clocked_wav)}))

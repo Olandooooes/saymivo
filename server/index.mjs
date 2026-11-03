@@ -8,6 +8,7 @@ import {captionTimingReviewRoute} from './caption-timing-review-routes.mjs';
 import {validateStoryboard} from '../src/storyboard.mjs';
 import {missingSceneAssets} from './scene-assets.mjs';
 import {createAutoEditor} from './auto-edit.mjs';
+import {fineCutRoute} from './fine-cut-routes.mjs';
 import {createRetakeAnalyzer,installRetakeShutdown} from './retake-routes.mjs';
 import {createPersonMatteAnalyzer} from './person-matte-routes.mjs';
 import {createDynamicAssetRoute} from './dynamic-asset-routes.mjs';
@@ -168,6 +169,7 @@ const server = createServer(async (req, res) => {
   if (await retakeAnalyzer.route(req,res,url)) return;
   if (await personMatteAnalyzer.route(req,res,url)) return;
   if (await autoEditor.route(req,res,url)) return;
+  if (await fineCutRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await captionReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await captionTimingReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
   if (await visualReviewRoute({req,res,url,ROOT,PUBLIC,json,body})) return;
@@ -478,9 +480,9 @@ const server = createServer(async (req, res) => {
     const args = [
       'remotion', 'render', 'MultiClip', outFile, `--props=${propsFile}`,
       `--concurrency=${concurrency}`,
-      `--x264-preset=${draft ? 'ultrafast' : 'veryfast'}`,
+      `--x264-preset=${draft ? 'ultrafast' : 'medium'}`,
       `--offthreadvideo-cache-size-in-bytes=${cacheBytes}`,
-      ...(draft ? ['--scale=0.5'] : []),
+      ...(draft ? ['--scale=0.5'] : ['--crf=18', '--image-format=png']),
     ];
     // Private producer receipt, bound to the exact installed encoder/config and
     // job props before starting. It cannot be supplied by a project or request.

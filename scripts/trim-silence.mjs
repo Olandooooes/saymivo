@@ -29,7 +29,7 @@ const plan=[],warnings=[];try{
  for(const [i,c]of clips.entries()){
  console.log(`PROGRESS:${Math.round(40+i/clips.length*50)}:检测停顿 ${i+1}/${clips.length}`);
  const audio=sourceAudio(c);
- const r=spawnSync('ffmpeg',['-hide_banner','-i',audio.wav,'-vn','-af','silencedetect=noise=-42dB:d=0.65','-f','null','-'],{encoding:'utf8',maxBuffer:16*1024*1024});if(r.status!==0)throw Error('停顿检测失败：'+(r.stderr??r.error?.message??'').slice(-220));
+ const r=spawnSync('ffmpeg',['-hide_banner','-i',audio.wav,'-vn','-af','silencedetect=noise=-42dB:d=0.40','-f','null','-'],{encoding:'utf8',maxBuffer:16*1024*1024});if(r.status!==0)throw Error('停顿检测失败：'+(r.stderr??r.error?.message??'').slice(-220));
  const gaps=[];let start=null;for(const line of r.stderr.split('\n')){const a=line.match(/silence_start: ([\d.]+)/),b=line.match(/silence_end: ([\d.]+)/);if(a)start=+a[1];if(b&&start!==null){gaps.push([start,+b[1]]);start=null;}}if(start!==null)gaps.push([start,c.sourceDurationSec]);
  let words=[];try{if(fs.existsSync(transcriptCacheFile(c)))words=transcribeClip(c);}catch{}
  const observed=independent.find(s=>s.src===c.src);
@@ -39,7 +39,7 @@ const plan=[],warnings=[];try{
  // It cannot override any cached word interval, including quiet syllables.
  let speechGaps=[];
  if(fs.existsSync('.venv/bin/faster-whisper-ready')){
-  const vad=spawnSync('.venv/bin/python',['scripts/detect-speech-pauses.py','--clocked-wav',audio.wav],{encoding:'utf8',maxBuffer:4*1024*1024});
+  const vad=spawnSync('.venv/bin/python',['scripts/detect-speech-pauses.py','--clocked-wav',audio.wav,'--min-silence-ms','400'],{encoding:'utf8',maxBuffer:4*1024*1024});
   if(vad.status===0){try{speechGaps=speechPauseGaps(JSON.parse(vad.stdout));}catch{}}
  }
  const candidates=[...gaps,...speechGaps].sort((a,b)=>a[0]-b[0]);
