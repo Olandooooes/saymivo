@@ -17,7 +17,7 @@
 | `main` | 旧版本 | 落后，**不要从 main 开工** |
 | `local-wip-20261103` | 用户 Mac 本地工作区全部文件（380144f）+ 已合并的 P0（合并提交 `09c6861`） | **当前主线** |
 | `cursor/p1-plan-components-7f55` | P1，[PR #3](https://github.com/Olandooooes/saymivo/pull/3)，base = local-wip，最新 `2437829`（文档提交 `f4d9975`） | 开放，**未合并、未经原片复验** |
-| `cursor/local-llm-plan-draft-2240` | 在 P1 之上加本机模型默认 | 见下方「下一步」；PR base = P1 分支 |
+| `cursor/local-llm-plan-draft-2240` | 在 P1 之上加本机模型默认，[PR #4](https://github.com/Olandooooes/saymivo/pull/4)，base = P1 分支 | 开放，**未经原片复验，也还没用真模型跑过测试素材** |
 | `cursor/sync-local-koubo-667c` | PR #1，另一个 agent 的同步，与 local-wip 分叉 | 不要动 |
 
 用户 Mac 上的本地仓库：`/Users/lht/Borumi Projects/koubo-studio`，当前检出 `local-wip-20261103`。Mac 没有命令行 git 凭据，推送需通过云端 agent 或其它有 GitHub 权限的环境。用户已授权直接推送本项目到 GitHub。
