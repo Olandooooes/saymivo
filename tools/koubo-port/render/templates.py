@@ -14,6 +14,12 @@ from layers import *
 TS = STYLE['type_scale_px']
 def ds(v): return int(v * REF_H / H)   # 1080 px type-scale value -> design px (so px(ds(v)) == v)
 
+def fit_px(text, base, limit, floor=22):
+    size = int(base)
+    while size > floor and font(size, 'Black').getlength(str(text)) > limit:
+        size = int(size * 0.92)
+    return max(floor, size)
+
 def _out(P, t, dur=0.18):           # fade-out factor at the scene end
     return 1 - clamp((t - (P['end'] - dur)) / dur)
 
@@ -46,7 +52,8 @@ def title_card(c, t, P, ctx):
             gx, gy, gw, gh = int(ctx['x0'] - 0.02 * W), int(0.32 * H), int(0.40 * W), int(0.22 * H)
             gl = Image.new('RGBA', (gw, gh), (0, 0, 0, 0)); d = ImageDraw.Draw(gl)
             d.rounded_rectangle([0, 0, gw - 1, gh - 1], px(18), fill=(255, 255, 255, 40), outline=(255, 255, 255, 90), width=2)
-            draw_text(gl, (px(36), px(40)), g['text'], font(px(50), 'Black'), (255, 255, 255, 255), px(4))
+            gsize = fit_px(g['text'], px(50), gw - px(80), px(22))
+            draw_text(gl, (px(36), px(40)), g['text'], font(gsize, 'Black'), (255, 255, 255, 255), px(4) if gsize > px(36) else 0)
             bw = int((gw - px(120)) * clamp((t - g['at']) / 1.2))
             d.rounded_rectangle([px(36), gh - px(34), px(36) + gw - px(120), gh - px(26)], 4, fill=(255, 255, 255, 50))
             d.rounded_rectangle([px(36), gh - px(34), px(36) + max(8, bw), gh - px(26)], 4, fill=(150, 226, 60, 255))
@@ -78,6 +85,7 @@ def side_panel(c, t, P, ctx):
     y = px(50)
     for it in P['items']:
         sz, wt, fill = sty[it.get('style', 'h2')]
+        sz = fit_px(it['text'], sz, pw - px(120), px(22))
         fu = fade_up(t, it['at'])
         if fu:
             dy, o = fu; tmp = Image.new('RGBA', Lp.size, (0, 0, 0, 0))
@@ -193,7 +201,9 @@ def flow_pills(c, t, P, ctx):
         sc, o = pop(t, P['header']['at'] - 0.03)
         scaled_layer(text_layer(P['header']['text'], px(64), 'Black', stroke=6), sc, W / 2, int(0.12 * H), o * q, c)
     A, B = P['a'], P['b']; yy = 0.30 * H
-    sc, o = pop(t, A['at'] - 0.08); scaled_layer(outline_pill(A['text'], px(56)), sc, 0.17 * W, yy, o * q, c)
+    a_size = fit_px(A['text'], px(56), int(0.26 * W), px(24))
+    b_size = fit_px(B['text'], px(56), int(0.26 * W), px(24))
+    sc, o = pop(t, A['at'] - 0.08); scaled_layer(outline_pill(A['text'], a_size), sc, 0.17 * W, yy, o * q, c)
     if t >= A['at'] + 0.17:
         ka = ease_out((t - A['at'] - 0.17) / 0.5); La = Image.new('RGBA', (W, px(120)), (0, 0, 0, 0)); da = ImageDraw.Draw(La)
         xa, xb = 0.27 * W, lerp(0.27 * W, 0.71 * W, ka); st = px(26); yc = px(60)
@@ -203,7 +213,7 @@ def flow_pills(c, t, P, ctx):
         if ka > 0.95: da.polygon([(xb + 4, yc - px(20)), (xb + px(30), yc), (xb + 4, yc + px(20))], fill=col('yellow'))
         alpha_comp(c, La, 0, int(yy - yc), q)
     sc, o = pop(t, B['at'] - 0.08)
-    scaled_layer(pill(B['text'], px(56), fg=col('ink'), fill=col('yellow'), padx=px(30), pady=px(14)), sc, 0.83 * W, yy, o * q, c)
+    scaled_layer(pill(B['text'], b_size, fg=col('ink'), fill=col('yellow'), padx=px(30), pady=px(14)), sc, 0.83 * W, yy, o * q, c)
     if P.get('bottom'):
         sc, o = pop(t, P['bottom']['at'] - 0.05, 0.36)
         scaled_layer(yellow(P['bottom']['text'], px(110)), sc, W / 2, int(0.72 * H), o * q, c)
@@ -226,7 +236,8 @@ def page_example(c, t, P, ctx):
     if tt:
         fu = fade_up(t, tt[0]['at'] - 0.05)
         if fu:
-            f = font(px(64), 'Black'); xx = x
+            size = fit_px(''.join(part['text'] for part in tt), px(64), int(0.86 * W - x), px(28))
+            f = font(size, 'Black'); xx = x
             for part in tt:
                 fu2 = fade_up(t, part['at'] - 0.06)
                 if fu2:
@@ -239,10 +250,13 @@ def page_example(c, t, P, ctx):
         k = ease_out((t - cd['at'] + 0.1) / 0.5); cw, chh = int(0.62 * W), int(0.36 * H)
         Cd = card(cw, chh, px(20), glow=(240, 120, 130)).copy(); d = ImageDraw.Draw(Cd); ox = oy = 40
         draw_text(Cd, (ox + px(44), oy + px(40)), cd.get('lead', ''), font(px(26), 'Bold'), col('muted'), px(3))
-        draw_text(Cd, (ox + px(44), oy + px(84)), cd.get('big', ''), font(px(44), 'Black'), col('ink'))
+        big = cd.get('big', '')
+        bsize = fit_px(big, px(44), cw - px(140), px(20))
+        draw_text(Cd, (ox + px(44), oy + px(84)), big, font(bsize, 'Black'), col('ink'))
         rx, ry = ox + int(cw * 0.48), oy + px(44); nw = px(250)
         d.rounded_rectangle([rx, ry, rx + nw, ry + px(64)], px(14), fill=col('orange'))
-        f = font(px(30), 'Black'); d.text((rx + nw / 2 - f.getlength(cd['node']) / 2, ry + px(12)), cd['node'], font=f, fill=(255, 255, 255, 255))
+        nsize = fit_px(cd['node'], px(30), nw - px(28), px(14))
+        f = font(nsize, 'Black'); d.text((rx + nw / 2 - f.getlength(cd['node']) / 2, ry + (px(64) - nsize) / 2), cd['node'], font=f, fill=(255, 255, 255, 255))
         for i in range(cd.get('children', 3)):
             a_ = clamp((t - cd['at'] - 0.5 - 0.12 * i) / 0.3)
             if a_ <= 0: continue
@@ -254,7 +268,9 @@ def page_example(c, t, P, ctx):
     cp = P.get('capsule')
     if cp and ex < 1:
         sc, o = pop(t, cp['at'] - 0.05, 0.36)
-        if o > 0: scaled_layer(capsule(cp['text'], px(52)), sc, int(0.40 * W), int(0.81 * H), o * (1 - ex), c)
+        if o > 0:
+            csize = fit_px(cp['text'], px(52), int(0.5 * W), px(24))
+            scaled_layer(capsule(cp['text'], csize), sc, int(0.40 * W), int(0.81 * H), o * (1 - ex), c)
 
 def scattered_capsules(c, t, P, ctx):
     """Muted lead word, then dark pills scattered with slight rotations and dashed connectors growing between
@@ -456,7 +472,9 @@ def neon_end(c, t, P, ctx):
         for a_ in (1, 0.7): alpha_comp(c, Ng, x - px(40), int(0.27 * H), flick * a_)
         alpha_comp(c, Nt, x - px(40), int(0.27 * H), flick)
     if P.get('line'):
-        sc, o = pop(t, P['line']['at'] - 0.05, 0.36); Lz = yellow(P['line']['text'], px(70))
+        sc, o = pop(t, P['line']['at'] - 0.05, 0.36)
+        lsize = fit_px(P['line']['text'], px(70), int(0.62 * W), px(28))
+        Lz = yellow(P['line']['text'], lsize)
         if o > 0: scaled_layer(Lz, sc, x - 30 + Lz.size[0] / 2, int(0.66 * H), o, c)
 
 OVERLAYS = dict(title_card=title_card, side_panel=side_panel, headline_pill=headline_pill, contrast_arrow=contrast_arrow,

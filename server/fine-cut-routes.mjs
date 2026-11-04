@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {projectCaptions} from '../src/fine-cut.mjs';
+import {buildWordsDocument, lexiconFromReview, projectCaptions} from '../src/fine-cut.mjs';
 import {planFromClock, renderFineCut} from '../scripts/render-fine-cut.mjs';
 import {transcriptCacheFile, transcribeClip} from '../scripts/lib-transcribe.mjs';
 import {planMedia, portRoot, refreshRegions, renderAudio, rerunCut, toReviewCutlist, wordsFromChars, cutVideo} from '../scripts/rough-cut.mjs';
+import {parseGlossary, readProofreadSettings} from './proofread.mjs';
+import {suggestTermMistakes} from '../src/term-suggest.mjs';
 
 const python = root => (fs.existsSync(path.join(root, '.venv/bin/python')) ? path.join(root, '.venv/bin/python') : 'python3');
 
@@ -42,11 +44,26 @@ function sourceWords(clip, fallback) {
 }
 
 export async function fineCutRoute({req, res, url, ROOT, PUBLIC, json, body}) {
-  if (url.pathname !== '/api/fine-cut/plan' && url.pathname !== '/api/fine-cut/render') return false;
+  const routes = ['/api/fine-cut/plan', '/api/fine-cut/render', '/api/fine-cut/corrections', '/api/fine-cut/suggest'];
+  if (!routes.includes(url.pathname)) return false;
   if (req.method !== 'POST') { json(res, 405, {error: '请使用 POST'}); return true; }
   let clock;
   try {
     const input = JSON.parse(await body(req));
+    if (url.pathname.endsWith('/suggest')) {
+      json(res, 200, await suggestTermMistakes({text: input.text ?? ''}));
+      return true;
+    }
+    if (url.pathname.endsWith('/corrections')) {
+      const glossary = input.glossary ?? readProofreadSettings(ROOT).glossary ?? '';
+      parseGlossary(glossary);
+      if (!Array.isArray(input.words)) throw Error('转写无效');
+      const document = buildWordsDocument({words: input.words, glossary, sourceSha256: input.sourceSha256, model: input.model || 'paraformer-zh'});
+      json(res, 200, {glossary, corrections: document.corrections});
+      return true;
+    }
+    const glossary = input.glossary ?? readProofreadSettings(ROOT).glossary ?? '';
+    parseGlossary(glossary);
     const clip = input.clip;
     if (!clip?.id || !Number.isFinite(clip.inSec) || !Number.isFinite(clip.outSec) || clip.outSec <= clip.inSec) throw Error('片段范围无效');
     clock = clockFor(ROOT, PUBLIC, clip.src);
@@ -66,15 +83,17 @@ export async function fineCutRoute({req, res, url, ROOT, PUBLIC, json, body}) {
       rerunCut(workdir, {removes: []});
     }
     const portCut = JSON.parse(fs.readFileSync(path.join(workdir, 'cutlist.json'), 'utf8'));
-    const words = wordsFromChars(chars, clock.receipt.sourceSha256);
+    const words = wordsFromChars(chars, clock.receipt.sourceSha256, glossary);
     const cutlist = toReviewCutlist(portCut, {sourceSha256: clock.receipt.sourceSha256, portKey});
     if (url.pathname.endsWith('/plan')) {
-      json(res, 200, {words, cutlist, durationSec: clock.receipt.durationSec, engine: 'koubo-port', portRoot});
+      json(res, 200, {words, cutlist, durationSec: clock.receipt.durationSec, engine: 'koubo-port', portRoot, glossary});
       return true;
     }
     const reviewed = input.cutlist ?? cutlist;
     if (!Array.isArray(reviewed.removes)) throw Error('剪辑单无效');
     if (reviewed.engine === 'koubo-port') {
+      const lexicon = lexiconFromReview({glossary, corrections: input.corrections ?? words.corrections});
+      fs.writeFileSync(path.join(workdir, 'lexicon.json'), JSON.stringify(lexicon, null, 2));
       rerunCut(workdir, reviewed);
       renderAudio(workdir);
       cutVideo(clock.media, workdir);

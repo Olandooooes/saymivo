@@ -8,6 +8,8 @@ corrections.json example: {"replace": {"他到底": "它到底", "agent": "Agent
 writes workdir/phrases.json = [{"text", "s", "e", "tokens": [[tok, t_out], ...]}]
 """
 import json, sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lexicon import apply_display, load
 
 def s2o(t, K):
     o = 0.0
@@ -37,6 +39,7 @@ def main(wd, corr_path=None, max_chars=16, gap=0.25):
         raw = ''.join((' ' + x[0] + ' ') if x[0].isascii() and x[0].isalpha() else x[0] for x in p).strip().replace('  ', ' ')
         disp = raw
         for k, v in corr.get('replace', {}).items(): disp = disp.replace(k, v)
+        disp = apply_display(disp, load(os.path.join(wd, 'lexicon.json')))
         res.append({'text': disp, 'raw': raw, 's': p[0][1], 'e': p[-1][2], 'tokens': [[x[0], x[1]] for x in p]})
     json.dump(res, open(os.path.join(wd, 'phrases.json'), 'w'), ensure_ascii=False, indent=1)
     print('phrases', len(res))

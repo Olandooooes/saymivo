@@ -76,11 +76,12 @@ export function toReviewCutlist(portCut, {sourceSha256 = null, portKey = null} =
   };
 }
 
-export function wordsFromChars(chars, sourceSha256) {
+export function wordsFromChars(chars, sourceSha256, glossary = '') {
   return buildWordsDocument({
     words: chars.map(([text, start, end]) => ({text, startMs: Math.round(start * 1000), endMs: Math.round(end * 1000)})),
     sourceSha256,
     model: 'paraformer-zh',
+    glossary,
   });
 }
 

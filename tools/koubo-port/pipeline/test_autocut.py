@@ -70,18 +70,41 @@ def test_opening_shots():
     push_at = next(row['at'] for row in scenes['shots'] if row['shot'] == 'PUSH')
     pip_at = next(row['at'] for row in scenes['shots'] if row['shot'] == 'PIP')
     assert 0 < pip_at - push_at <= 2.5, (push_at, pip_at)
-    spoken = ''.join(row['text'] for row in phrases)
+    opening = [row['template'] for row in scenes['overlays'] if row['start'] < 20]
+    assert {'title_card', 'side_panel', 'headline_pill', 'pill_lines', 'blur_lines', 'flow_pills'} <= set(opening), opening
+    for row in scenes['overlays']:
+        if row['start'] < 20:
+            assert row['end'] - row['start'] <= 3.25, row
+    page = next(row for row in scenes['pages'] if row['start'] < 20)
+    assert page['layers'][0]['template'] == 'page_example', page
+    assert page['layers'][0]['capsule']['text']
+    assert page['end'] - page['start'] <= 3.25, page
+    title = next(row for row in scenes['overlays'] if row['template'] == 'title_card')
+    assert title['title']['text'] == phrases[0]['text']
+    assert title['glass']['text'] == phrases[1]['text']
+    assert len(phrases[0]['text']) > 8
+    assert scenes['chapters'][0]['title'] == phrases[0]['text']
+    spoken = [row['text'] for row in phrases]
+    def acceptable(text):
+        if text in spoken:
+            return True
+        for phrase in spoken:
+            if '到' in phrase and '从' in phrase:
+                left, right = phrase.split('到', 1)
+                if text in (left, right):
+                    return True
+        return False
     def walk(value):
         if isinstance(value, dict):
             if isinstance(value.get('text'), str) and value['text'].strip():
-                assert value['text'].strip() in spoken, value['text']
+                assert acceptable(value['text'].strip()), value['text']
             for item in value.values():
                 walk(item)
         elif isinstance(value, list):
             for item in value:
                 walk(item)
     walk(scenes)
-    print('draft-ok', names[:5], stills)
+    print('draft-ok', names[:8], stills, opening)
 
 
 def test_hangover_bridges_a_short_vocalization():
@@ -102,7 +125,57 @@ def test_hangover_bridges_a_short_vocalization():
     print('hangover-ok', hung)
 
 
+def test_display_replacement_keeps_longer_latin():
+    spec = importlib.util.spec_from_file_location('lexicon', os.path.join(os.path.dirname(__file__), 'lexicon.py'))
+    lexicon = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lexicon)
+    with tempfile.TemporaryDirectory() as wd:
+        path = os.path.join(wd, 'lexicon.json')
+        json.dump({'hotwords': ['AI Agent'], 'replace': [
+            {'before': 'AI', 'after': '人工智能', 'status': 'accepted'},
+            {'before': 'AIA', 'after': 'AI Agent', 'status': 'accepted'},
+            {'before': 'skip', 'after': 'nope', 'status': 'proposed'},
+        ]}, open(path, 'w'), ensure_ascii=False)
+        lex = lexicon.load(path)
+        assert lexicon.apply_display('AIA 技能', lex) == 'AI Agent 技能'
+        assert lexicon.apply_display('AI 技能', lex) == '人工智能 技能'
+        assert lexicon.apply_display('skip', lex) == 'skip'
+        assert 'AI Agent' in lexicon.hotword_arg(lex)
+    print('lexicon-ok')
+
+
+def test_phrase_display_uses_lexicon():
+    spec = importlib.util.spec_from_file_location('phrases', os.path.join(os.path.dirname(__file__), '06_phrases.py'))
+    phrases = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(phrases)
+    with tempfile.TemporaryDirectory() as wd:
+        json.dump([['AIA', 0.1, 0.4], ['技', 0.5, 0.7], ['能', 0.8, 1.0]], open(os.path.join(wd, 'chars.json'), 'w'), ensure_ascii=False)
+        json.dump({'keep': [[0, 2]]}, open(os.path.join(wd, 'cutlist.json'), 'w'))
+        json.dump({'replace': [{'before': 'AIA', 'after': 'AI Agent', 'status': 'accepted'}]}, open(os.path.join(wd, 'lexicon.json'), 'w'), ensure_ascii=False)
+        phrases.main(wd)
+        out = json.load(open(os.path.join(wd, 'phrases.json')))
+        assert out[0]['text'].startswith('AI Agent'), out[0]['text']
+        assert out[0]['raw'].startswith('AIA'), out[0]['raw']
+        assert out[0]['tokens'][0][0] == 'AIA'
+    print('phrase-display-ok', out[0]['text'])
+
+
+def test_shot_zoom_stays_locked():
+    style = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'config', 'style.json')))
+    shots = style['person']['shots']
+    assert shots['WIDE_L']['zoom'] == 0.8
+    assert shots['WIDE_R']['zoom'] == 0.8
+    assert shots['PUSH']['zoom'] == 1.08
+    assert style['canvas']['window'] is None
+    assert style['canvas']['wallpaper'] is None
+    assert style['person']['matting'] is False
+    print('zoom-ok', shots['WIDE_L']['zoom'], shots['PUSH']['zoom'])
+
+
 if __name__ == '__main__':
     main()
     test_opening_shots()
     test_hangover_bridges_a_short_vocalization()
+    test_display_replacement_keeps_longer_latin()
+    test_phrase_display_uses_lexicon()
+    test_shot_zoom_stays_locked()

@@ -53,13 +53,20 @@ def draw_sub(c, t, PH):
 def chapter_bar(chaps, total):
     B = STYLE['chapter_bar']
     def mk():
-        L = Image.new('RGBA', (W, B['height']), tuple(B['bg_rgba'])); d = ImageDraw.Draw(L); f = font(B['font_px'], B['weight'])
+        L = Image.new('RGBA', (W, B['height']), tuple(B['bg_rgba'])); d = ImageDraw.Draw(L)
         bounds = [ch['at'] for ch in chaps] + [total]
         for i, ch in enumerate(chaps):
             x0, x1 = int(ch['at'] / total * W), int(bounds[i + 1] / total * W)
             if i > 0: d.rectangle([x0 - 1, 9, x0 + 1, B['height'] - 9], fill=tuple(B['divider_rgba']))
-            w = f.getlength(ch['title']); xc = (x0 + x1) / 2 if i > 0 else x0 + 16 + w / 2
-            d.text((xc - w / 2, (B['height'] - B['font_px']) // 2 - 3), ch['title'], font=f, fill=(255, 255, 255, 240))
+            size = B['font_px']
+            title = ch['title']
+            f = font(size, B['weight'])
+            span = max(48, (x1 - x0) - 28)
+            while size > 14 and f.getlength(title) > span:
+                size -= 1
+                f = font(size, B['weight'])
+            w = f.getlength(title); xc = (x0 + x1) / 2 if i > 0 else x0 + 16 + w / 2
+            d.text((xc - w / 2, (B['height'] - size) // 2 - 3), title, font=f, fill=(255, 255, 255, 240))
         return L
     return cached(('bar', total), mk)
 

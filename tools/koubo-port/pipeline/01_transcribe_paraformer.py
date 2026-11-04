@@ -6,15 +6,24 @@ timestamps that were accurate enough to place cuts (±40 ms) — combine with th
 energy VAD (02) for the true end of a word (plosive tails like the final "t").
 
 usage: python 01_transcribe_paraformer.py workdir/
-reads workdir/aligned16.wav ; writes workdir/chars.json = [[char, start, end], ...] (video time)
+reads workdir/aligned16.wav and, when present, workdir/lexicon.json hotwords.
+writes workdir/chars.json = [[char, start, end], ...] (video time)
 English words come back as one token (e.g. "agent"); keep them as one token.
+Hotwords bias the next transcription. They do not rewrite an existing chars.json.
 """
 import json, sys, os, re
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lexicon import hotword_arg, load
 
 def main(wd):
     from funasr import AutoModel
     m = AutoModel(model='paraformer-zh', model_revision='v2.0.4', vad_model='fsmn-vad', punc_model=None, disable_update=True)
-    res = m.generate(input=os.path.join(wd, 'aligned16.wav'), batch_size_s=60, sentence_timestamp=True)
+    hot = hotword_arg(load(os.path.join(wd, 'lexicon.json')))
+    kwargs = {}
+    if hot:
+        kwargs['hotword'] = hot
+        print('hotwords', hot)
+    res = m.generate(input=os.path.join(wd, 'aligned16.wav'), batch_size_s=60, sentence_timestamp=True, **kwargs)
     chars = []
     for r in res:
         toks = r['text'].split()          # paraformer returns space separated tokens (CJK chars / latin words)

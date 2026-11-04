@@ -13,7 +13,7 @@ pipeline/02_speech_regions.py  能量 VAD（20 ms, -34 dB, 合并<0.25 s, 丢弃
 pipeline/03_autocut.py         自动粗剪 → cutlist.json + 剪辑表.md（给用户审）；支持 overrides.json
 pipeline/04_render_audio.py    30 ms 等功率交叉淡化 + 头 40 ms / 尾 300 ms 淡入淡出 + -16 LUFS
 pipeline/05_cut_video.py       同一份按帧取整的 keep 列表切视频（select/between + setpts），校验帧数
-pipeline/06_phrases.py         输出时间轴上的字幕意群 + 逐 token 时间（动效对口型用），错别字只走 corrections 映射
+pipeline/06_phrases.py         输出时间轴上的字幕意群 + 逐 token 时间（动效对口型用）。词库热词给下次转写，已接受的替换只改显示文字
 pipeline/tmap.py               s2o / o2s / joins
 render/common.py layers.py     缓动、pop/fade_up、文字/胶囊/卡片/图标/运动模糊滑入/辉光背景
 render/person.py               人物合成：不抠像，原背景镜像延展+轻模糊填边；景别关键帧平滑变焦；PiP 形变；跳切推拉

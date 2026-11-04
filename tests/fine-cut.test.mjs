@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {adaptiveSilenceRanges, buildCutlist, buildWordsDocument, keepRanges, projectSourceMs, audioRangeForVideo, snapTimeMs} from '../src/fine-cut.mjs';
+import {adaptiveSilenceRanges, buildCutlist, buildWordsDocument, keepRanges, lexiconFromReview, projectSourceMs, audioRangeForVideo, snapTimeMs} from '../src/fine-cut.mjs';
 import {decodedAudioDuration, filterGraph, frameSegments, planFromClock, probeFrameRate, readPcm16, renderFineCut, syncAtCuts} from '../scripts/render-fine-cut.mjs';
 
 const words = [
@@ -439,8 +439,34 @@ test('lowercase agent and AIagent become term candidates without new clocks', ()
     {text: 'AIagent', startMs: 500, endMs: 900},
   ]});
   assert.ok(document.corrections.some(row => row.before === 'agent' && row.after === 'Agent' && row.status === 'proposed'));
-  assert.ok(document.corrections.some(row => row.before === 'AIagent' && row.after === 'AI Agent'));
+  assert.ok(document.corrections.some(row => row.before === 'AIagent' && row.after === 'AI Agent' && row.status === 'proposed'));
   assert.deepEqual(document.words.map(word => [word.startMs, word.endMs]), [[0, 400], [500, 900]]);
+});
+
+test('a personal glossary accepts its alias and a bare lookalike stays untouched', () => {
+  const bare = buildWordsDocument({words: [
+    {text: 'AIA', startMs: 0, endMs: 400},
+    {text: '技能', startMs: 400, endMs: 700},
+  ]});
+  assert.equal(bare.corrections.some(row => row.before === 'AIA'), false);
+  const document = buildWordsDocument({words: [
+    {text: 'AIA', startMs: 0, endMs: 400},
+    {text: '技能', startMs: 400, endMs: 700},
+  ], glossary: 'AI Agent｜AIA'});
+  const row = document.corrections.find(item => item.before === 'AIA');
+  assert.equal(row.after, 'AI Agent');
+  assert.equal(row.status, 'accepted');
+  assert.equal(row.source, 'glossary');
+  assert.equal(document.words[0].text, 'AIA');
+  const lexicon = lexiconFromReview({glossary: 'AI Agent｜AIA', corrections: [
+    ...document.corrections,
+    {before: 'agent', after: 'Agent', status: 'proposed', source: 'llm'},
+  ]});
+  assert.deepEqual(lexicon.hotwords, ['AI Agent']);
+  assert.equal(lexicon.replace.length, 1);
+  assert.equal(lexicon.replace[0].status, 'accepted');
+  const vetoed = lexiconFromReview({glossary: 'AI Agent｜AIA', corrections: [{before: 'AIA', after: 'AI Agent', status: 'rejected'}]});
+  assert.equal(vetoed.replace.length, 0);
 });
 
 test('a 67ms tail sliver is not kept', () => {
@@ -673,4 +699,20 @@ test('withinOneFrame uses decoded audio length, not the AAC container duration',
   assert.ok(Math.abs(sync.audioDurationSec - decoded) < 0.002, JSON.stringify(sync));
   assert.ok(Math.abs(sync.audioDurationSec - container) > 0.003, JSON.stringify(sync));
   assert.equal(sync.withinOneFrame, true, JSON.stringify(sync));
+});
+
+test('fine-cut corrections stay on the glossary and do not transcribe', async () => {
+  const {fineCutRoute} = await import('../server/fine-cut-routes.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fine-correct-'));
+  let response;
+  const handled = await fineCutRoute({
+    req: {method: 'POST'}, res: null, url: new URL('http://localhost/api/fine-cut/corrections'), ROOT: root, PUBLIC: root,
+    json: (_res, code, data) => { response = {code, data}; },
+    body: async () => JSON.stringify({glossary: 'AI Agent｜AIA', words: [{text: 'AIA', startMs: 0, endMs: 400}, {text: '技能', startMs: 400, endMs: 800}]}),
+  });
+  assert.equal(handled, true);
+  assert.equal(response.code, 200);
+  assert.equal(response.data.corrections[0].status, 'accepted');
+  assert.equal(response.data.corrections[0].after, 'AI Agent');
+  assert.equal(response.data.corrections[0].before, 'AIA');
 });

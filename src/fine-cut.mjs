@@ -43,9 +43,18 @@ function charIndex(words) {
   return {text: words.map(word => word.text).join(''), marks};
 }
 
+function correctionStatus(source) {
+  return source === 'glossary'
+    ? {status: 'accepted', reason: '用户词库，替换显示文字，不改词时间', source}
+    : {status: 'proposed', reason: '术语词库候选，不改词时间', source};
+}
+
 export function proposeTermCorrections(words, glossary = '') {
   const {text, marks} = charIndex(words);
-  const terms = [...TERMS, ...parseGlossary(glossary).map(row => ({term: row.term, aliases: row.aliases}))];
+  const terms = [
+    ...parseGlossary(glossary).map(row => ({term: row.term, aliases: row.aliases, source: 'glossary'})),
+    ...TERMS.map(term => ({...term, source: 'builtin'})),
+  ];
   const corrections = [];
   const occupied = [];
   const covers = (start, end) => marks.filter(mark => mark.end > start && mark.start < end).map(mark => words[mark.index].id);
@@ -53,12 +62,12 @@ export function proposeTermCorrections(words, glossary = '') {
     const token = word.text.trim();
     const hit = terms.find(term => term.term !== token && (term.aliases ?? []).some(alias => alias.toLowerCase() === token.toLowerCase()));
     if (!hit) continue;
-    corrections.push({id: `c${corrections.length + 1}`, wordIds: [word.id], before: token, after: hit.term, reason: '术语词库候选，不改词时间', status: 'proposed'});
+    corrections.push({id: `c${corrections.length + 1}`, wordIds: [word.id], before: token, after: hit.term, ...correctionStatus(hit.source)});
     occupied.push({start: marks.find(mark => mark.index === words.indexOf(word))?.start ?? 0, end: marks.find(mark => mark.index === words.indexOf(word))?.end ?? 0});
   }
-  const needles = terms.flatMap(term => (term.aliases ?? []).filter(alias => alias && alias !== term.term && /[^\u0000-\u007f]/.test(alias)).map(alias => ({alias, term: term.term})));
+  const needles = terms.flatMap(term => (term.aliases ?? []).filter(alias => alias && alias !== term.term && /[^\u0000-\u007f]/.test(alias)).map(alias => ({alias, term: term.term, source: term.source})));
   needles.sort((a, b) => b.alias.length - a.alias.length);
-  for (const {alias, term} of needles) {
+  for (const {alias, term, source} of needles) {
     let from = 0;
     const folded = text.toLowerCase();
     const probe = alias.toLowerCase();
@@ -79,14 +88,42 @@ export function proposeTermCorrections(words, glossary = '') {
           wordIds,
           before: text.slice(at, end),
           after: term,
-          reason: '术语词库候选，不改词时间',
-          status: 'proposed',
+          ...correctionStatus(source),
         });
       }
       from = at + Math.max(1, alias.length);
     }
   }
   return corrections;
+}
+
+export function lexiconFromReview({glossary = '', corrections = []} = {}) {
+  const hotwords = [];
+  const replace = [];
+  const addHot = value => {
+    const text = String(value ?? '').trim();
+    if (text && !hotwords.includes(text)) hotwords.push(text);
+  };
+  const addRow = (before, after, source) => {
+    const left = String(before ?? '');
+    const right = String(after ?? '');
+    if (!left || !right || left === right) return;
+    if (replace.some(row => row.before === left && row.after === right)) return;
+    replace.push({before: left, after: right, status: 'accepted', source});
+  };
+  for (const row of parseGlossary(glossary)) {
+    addHot(row.term);
+    for (const alias of row.aliases ?? []) {
+      const vetoed = corrections.some(item => item?.before === alias && item?.after === row.term && item?.status === 'rejected');
+      if (!vetoed) addRow(alias, row.term, 'glossary');
+    }
+  }
+  for (const correction of corrections) {
+    if (correction?.status !== 'accepted') continue;
+    addHot(correction.after);
+    addRow(correction.before, correction.after, correction.source || 'user');
+  }
+  return {hotwords, replace};
 }
 
 export function applyAcceptedCorrections(document) {
