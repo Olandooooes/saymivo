@@ -1,33 +1,34 @@
 """Draft a generic scene list from subtitle phrases.
 
-On-screen copy is a whole spoken phrase. A label is never a character budget
-cut out of a longer sentence. Nothing here is written for one script.
+Phrases that belong to one idea share a template. Title, big text, label,
+capsule and card all come from that idea. A template that would only have a
+scrap of text (a card of a few characters, an empty page) falls back to a
+simpler template. Nothing here is written for one script.
 
 Each field on one template takes a different phrase. A field with nothing
 left stays empty. The same phrase may also sit in the subtitle, but it is
 not copied into a second graphic at the same time.
 
-The opening 20 seconds always plays one template order: opening title, frosted
-glass card, white panel, chapter type, a push no longer than 2.2 s, a white
-page with the small window and a capsule, then a blur slide and a flow.
-Later stretches rotate templates so a shot does not sit still for more than
-about 3 seconds. Shot zoom values stay in style.json.
+Later stretches keep every fitting template in the catalog moving. A shot
+does not sit still for more than 3 seconds. Shot zoom values stay in style.json.
 
 usage: python 07_draft_scenes.py workdir/
 reads phrases.json ; writes scenes.json and preview_beats.json
 """
-import json, os, sys
+import json, os, re, sys
 
-OPENING = (
-    (0.00, 3.00, 'WIDE_C', 'title_card'),
-    (3.00, 6.00, 'WIDE_R', 'side_panel'),
-    (6.00, 9.00, 'WIDE_L', 'headline_pill'),
-    (9.00, 11.20, 'PUSH', 'pill_lines'),
-    (11.20, 14.20, 'PIP', 'page_example'),
-    (14.20, 17.20, 'WIDE_R', 'blur_lines'),
-    (17.20, 20.20, 'WIDE_L', 'flow_pills'),
+PAGE_KINDS = ('page_example', 'scattered_capsules', 'doc_stack', 'card_carousel', 'editor_mock')
+PRIORITY = (
+    'error_stack', 'doc_stack', 'headline_badges', 'card_carousel', 'editor_mock',
+    'page_example', 'scattered_capsules', 'contrast_arrow', 'flow_pills',
+    'side_panel', 'headline_pill', 'blur_lines', 'pill_lines',
 )
-ROTATE = ('side_panel', 'headline_pill', 'blur_lines', 'pill_lines', 'flow_pills')
+RICH_WHOLE = {
+    'error_stack', 'doc_stack', 'card_carousel', 'editor_mock', 'page_example',
+    'scattered_capsules', 'headline_badges', 'contrast_arrow', 'flow_pills',
+    'side_panel', 'title_card', 'neon_end',
+}
+MAX_SHOT = 3.0
 
 
 def clean(text):
@@ -45,9 +46,8 @@ def phrase_at(phrases, time):
 
 
 def texts_between(phrases, start, end, pad=0.4):
-    """Phrases that belong to this beat: most of the phrase sits inside it,
-    or the next phrase starts just as the beat ends. A sentence that only
-    grazes the boundary stays with the beat that actually speaks it."""
+    """Phrases that overlap a beat. Kept for callers that still ask by time.
+    Drafting itself pairs by idea, not by this window."""
     found = []
     for phrase in phrases:
         dur = max(0.05, phrase['e'] - phrase['s'])
@@ -60,7 +60,7 @@ def texts_between(phrases, start, end, pad=0.4):
         text = clean(phrase.get('text'))
         if text and text not in found:
             found.append(text)
-    if not found:
+    if not found and phrases:
         text = clean(phrase_at(phrases, start).get('text'))
         found = [text or phrases[0].get('text') or ' ']
     return found
@@ -73,15 +73,96 @@ def line_size(text, base=118):
 
 
 def is_question(text):
-    return any(mark in text for mark in ('？', '?')) or text.endswith('吗')
+    return any(mark in text for mark in ('？', '?', '吗', '呢', '有没有', '是不是', '能不能', '哪里', '什么', '怎么', '为何', '为什么'))
 
 
 def is_contrast(text):
     return '从' in text and '到' in text and text.find('从') < text.find('到')
 
 
-def is_list(text):
-    return any(mark in text for mark in ('第一', '第二', '首先', '其次'))
+def contrast_open(text):
+    if '从' not in text:
+        return False
+    return '到' not in text[text.find('从') + 1:]
+
+
+def example_intro(text):
+    return len(text) <= 16 and bool(re.search(r'(举个例子|比如说|例如|比如|比方|例子)', text))
+
+
+def definition_follow(text):
+    return text.startswith(('也就是', '就是说', '意思是', '亦即'))
+
+
+def error_head(text):
+    return any(mark in text for mark in ('误区', '风险', '容易错'))
+
+
+def step_intro(text):
+    return any(mark in text for mark in ('步骤', '流程', '接起来', '串起来'))
+
+
+def list_intro(text):
+    return bool(re.search(r'(三件|三点|三步|几件|几个方面|两件|两步)', text))
+
+
+def list_item(text):
+    return bool(re.match(r'^(第[一二三四五六七八九十]+|首先|其次|最后)', text.replace(' ', '')))
+
+
+def tool_intro(text):
+    return any(mark in text for mark in ('工具', '工作台', '产品', '软件')) and any(mark in text for mark in ('说', '讲', '用', '做'))
+
+
+def tool_step(text):
+    return any(mark in text for mark in ('导入', '整理', '安排', '标出', '调整', '导出', '剪辑', '字幕', '画面'))
+
+
+def new_topic(text):
+    return (
+        text.startswith(('所以', '因此', '另外', '接下来'))
+        or example_intro(text) or list_intro(text) or list_item(text)
+        or tool_intro(text) or step_intro(text) or error_head(text)
+        or contrast_open(text) or is_contrast(text) or is_question(text)
+    )
+
+
+def same_idea(group, nxt):
+    gap = nxt['s'] - group[-1]['e']
+    if gap > 0.9:
+        return False
+    prev = clean(group[-1].get('text'))
+    text = clean(nxt.get('text'))
+    if example_intro(prev) and len(group) == 1 and gap < 0.85:
+        return True
+    if any(example_intro(clean(p.get('text'))) for p in group) and gap < 0.2 and len(group) < 4:
+        return True
+    if definition_follow(text) and gap < 0.85 and len(group) < 3:
+        return True
+    if contrast_open(prev) and not is_contrast(prev) and len(group) == 1 and gap < 0.85:
+        return True
+    if error_head(clean(group[0].get('text'))) and len(group) < 8 and gap < 0.75 and not new_topic(text):
+        return True
+    if any(step_intro(clean(p.get('text'))) for p in group) and len(group) < 6 and gap < 0.7 and not new_topic(text):
+        return True
+    if any(list_intro(clean(p.get('text'))) for p in group) and list_item(text) and len(group) < 6 and gap < 0.85:
+        return True
+    if any(tool_intro(clean(p.get('text'))) for p in group) and len(group) < 8 and gap < 0.75 and not new_topic(text):
+        return True
+    return False
+
+
+def group_ideas(phrases):
+    ideas = []
+    current = []
+    for phrase in phrases:
+        if current and not same_idea(current, phrase):
+            ideas.append(current)
+            current = []
+        current.append(phrase)
+    if current:
+        ideas.append(current)
+    return ideas
 
 
 def at(start, end, offset):
@@ -94,19 +175,6 @@ def timed(text, start, end, offset):
 
 def overlay_span(start, end):
     return round(start, 3), round(max(start + 0.4, end - 0.02), 3)
-
-
-def title_card(phrases, start, end):
-    title = clean(phrases[0].get('text')) or ' '
-    glass = clean(phrases[1].get('text')) if len(phrases) > 1 else title
-    return {
-        'template': 'title_card',
-        'start': start,
-        'end': end,
-        'title': {'text': title, 'at': at(start, end, 0.12)},
-        'glass': {'text': glass, 'at': at(start, end, 0.85)},
-        'arrows': {'at': at(start, end, 1.7), 'x': 0.62, 'y': 0.28, 'point': 'right'},
-    }
 
 
 def consume(texts):
@@ -122,6 +190,20 @@ def consume(texts):
         return pool.pop(0)
 
     return take
+
+
+def title_card(texts, start, end):
+    title = texts[0] if texts else ' '
+    spec = {
+        'template': 'title_card',
+        'start': start,
+        'end': end,
+        'title': {'text': title, 'at': at(start, end, 0.12)},
+        'arrows': {'at': at(start, end, 1.4), 'x': 0.62, 'y': 0.28, 'point': 'right'},
+    }
+    if len(texts) > 1 and texts[1] != title:
+        spec['glass'] = {'text': texts[1], 'at': at(start, end, 0.7)}
+    return spec
 
 
 def side_panel(texts, start, end):
@@ -189,109 +271,146 @@ def flow_pills(texts, start, end):
 
 
 def contrast_arrow(texts, start, end, blocked=()):
-    sentence = next((text for text in texts if is_contrast(text)), '')
-    parts = [clean(part) for part in sentence.split('到', 1)] if sentence else []
-    left = parts[0] if len(parts) == 2 else ''
-    right = parts[1] if len(parts) == 2 else ''
     blocked = set(blocked)
-    if (not left or not right or left == sentence or right == sentence or left == right
-            or left in blocked or right in blocked or left == right):
-        return headline_pill(texts, start, end)
-    return {
-        'template': 'contrast_arrow',
-        'start': start,
-        'end': end,
-        'header': timed(sentence, start, end, 0.06),
-        'from': timed(left, start, end, 0.16),
-        'to': timed(right, start, end, 0.7),
-    }
+    sentence = next((text for text in texts if is_contrast(text)), '')
+    if sentence:
+        left, right = [clean(part) for part in sentence.split('到', 1)]
+        if (len(left) >= 2 and len(right) >= 2 and left != right and left != sentence and right != sentence
+                and left not in blocked and right not in blocked):
+            return {
+                'template': 'contrast_arrow',
+                'start': start,
+                'end': end,
+                'from': timed(left, start, end, 0.16),
+                'to': timed(right, start, end, 0.7),
+            }
+    if len(texts) >= 2 and contrast_open(texts[0]) and texts[0] not in blocked and texts[1] not in blocked and texts[0] != texts[1]:
+        return {
+            'template': 'contrast_arrow',
+            'start': start,
+            'end': end,
+            'from': timed(texts[0], start, end, 0.16),
+            'to': timed(texts[1], start, end, 0.7),
+        }
+    return headline_pill(texts, start, end)
 
 
 def headline_badges(texts, start, end):
-    take = consume(texts)
+    points = [text for text in texts if list_item(text)]
+    headline = next((text for text in texts if list_intro(text)), '')
+    if not headline:
+        headline = next((text for text in texts if text not in points), '')
     spec = {
         'template': 'headline_badges',
         'start': start,
         'end': end,
-        'badges': {'n': min(3, max(2, len([text for text in texts if clean(text)]))), 'at': at(start, end, 0.45)},
+        'badges': {'n': min(3, max(2, len(points) or 2)), 'at': at(start, end, 0.45)},
     }
-    headline = take()
     if headline:
-        spec['headline'] = timed(headline, start, end, 0.28)
-    label = take()
-    if label:
-        spec['pill'] = timed(label, start, end, 0.08)
+        spec['headline'] = timed(headline, start, end, 0.2)
     return spec
+
+
+def error_stack(texts, start, end):
+    body = [text for text in texts if text]
+    if len(body) < 3:
+        return pill_lines(texts, start, end)
+    verdict = body[-1]
+    items = body[:-1][:4]
+    return {
+        'template': 'error_stack',
+        'start': start,
+        'end': end,
+        'items': [{'text': text, 'at': at(start, end, 0.12 + index * 0.32)} for index, text in enumerate(items)],
+        'verdict': timed(verdict, start, end, 0.2 + 0.32 * len(items)),
+    }
 
 
 def page_example(texts, start, end):
     take = consume(texts)
-    spec = {'template': 'page_example', 'start': start, 'end': end}
     title = take()
     big = take()
     cap = take()
-    node = take()
-    kicker = take()
-    caption = take()
-    lead = take()
-    if title:
-        spec['title'] = [timed(title, start, end, 0.16)]
-    if kicker:
-        spec['kicker'] = timed(kicker, start, end, 0.08)
-    if caption:
-        spec['caption'] = caption
-    card = {}
-    if lead:
-        card['lead'] = lead
-    if big:
-        card['big'] = big
-    if node:
-        card['node'] = node
-        card['children'] = 3
-    if card:
-        card['at'] = at(start, end, 0.4)
-        spec['card'] = card
-    if cap:
+    if big and len(big) < 4:
+        big = None
+    if not title or not big:
+        return None
+    spec = {
+        'template': 'page_example',
+        'start': start,
+        'end': end,
+        'title': [timed(title, start, end, 0.16)],
+        'card': {'big': big, 'at': at(start, end, 0.4)},
+    }
+    if cap and cap not in (title, big) and len(cap) >= 4:
         spec['capsule'] = timed(cap, start, end, 0.9)
     return spec
 
 
 def scattered(texts, start, end):
-    take = consume(texts)
-    items = []
-    for index in range(4):
-        text = take()
-        if not text:
-            break
-        items.append({'text': text, 'at': at(start, end, 0.28 + index * 0.28)})
-    spec = {'template': 'scattered_capsules', 'start': start, 'end': end, 'items': items}
-    lead = take()
-    cap = take()
-    if lead:
-        spec['lead'] = timed(lead, start, end, 0.08)
-    if cap:
-        spec['capsule'] = timed(cap, start, end, 1.05)
+    body = [text for text in texts if not step_intro(text) and not tool_intro(text)] or list(texts)
+    body = [text for text in body if len(text) >= 2][:4]
+    if len(body) < 3:
+        return None
+    return {
+        'template': 'scattered_capsules',
+        'start': start,
+        'end': end,
+        'items': [{'text': text, 'at': at(start, end, 0.2 + index * 0.28)} for index, text in enumerate(body)],
+    }
+
+
+def doc_stack(texts, start, end):
+    intro = texts[0] if texts and step_intro(texts[0]) else ''
+    body = [text for text in texts if text != intro]
+    if len(body) < 2:
+        return None
+    spec = {
+        'template': 'doc_stack',
+        'start': start,
+        'end': end,
+        'items': [{'text': text, 'at': at(start, end, 0.35 + index * 0.38)} for index, text in enumerate(body[:5])],
+        'slots_at': at(start, end, 0.16),
+    }
+    if intro:
+        spec['header'] = [timed(intro, start, end, 0.08)]
     return spec
 
 
-def build_overlay(kind, texts, start, end, phrases, blocked=()):
-    if kind == 'title_card':
-        return title_card(phrases, start, end)
-    if kind == 'side_panel':
-        return side_panel(texts, start, end)
-    if kind == 'headline_pill':
-        return headline_pill(texts, start, end)
-    if kind == 'pill_lines':
-        return pill_lines(texts, start, end)
-    if kind == 'blur_lines':
-        return blur_lines(texts, start, end)
-    if kind == 'flow_pills':
-        return flow_pills(texts, start, end)
-    if kind == 'contrast_arrow':
-        return contrast_arrow(texts, start, end, blocked)
-    if kind == 'headline_badges':
-        return headline_badges(texts, start, end)
-    return pill_lines(texts, start, end)
+def card_carousel(texts, start, end):
+    points = [text for text in texts if list_item(text)]
+    if len(points) < 2:
+        return None
+    cards = []
+    for index, text in enumerate(points[:4]):
+        plain = text.replace(' ', '')
+        mark = re.match(r'^(第[一二三四五六七八九十]+|首先|其次|最后)', plain)
+        tag = mark.group(1) if mark else plain[:2]
+        rest = plain[len(tag):] or plain
+        if len(rest) < 2:
+            rest = plain
+        cards.append({'tag': tag, 'at': at(start, end, 0.16 + index * 0.4), 'lines': [{'text': rest}]})
+    spec = {'template': 'card_carousel', 'start': start, 'end': end, 'cards': cards}
+    header = next((text for text in texts if list_intro(text)), '')
+    if header and header not in points:
+        spec['header'] = header
+    return spec
+
+
+def editor_mock(texts, start, end):
+    title = next((text for text in texts if tool_intro(text)), '')
+    steps = [text for text in texts if tool_step(text) and text != title]
+    if len(steps) < 2:
+        return None
+    spec = {
+        'template': 'editor_mock',
+        'start': start,
+        'end': end,
+        'checklist': [{'text': text, 'at': at(start, end, 0.28 + index * 0.32)} for index, text in enumerate(steps[:4])],
+    }
+    if title:
+        spec['title'] = title
+    return spec
 
 
 def neon_end(texts, start, end):
@@ -300,39 +419,138 @@ def neon_end(texts, start, end):
     word, line = take(), take()
     if word:
         spec['word'] = timed(word, start, end, 0.2)
-    if line:
-        spec['line'] = timed(line, start, end, 0.45)
+    if line and line != word:
+        spec['line'] = timed(line, start, end, 0.55)
     return spec
 
 
-def page_for(kind, texts, start, end, pip_count):
-    layer = scattered(texts, start, end) if pip_count % 2 == 1 else page_example(texts, start, end)
+def rich(name, idea):
+    texts = [clean(p.get('text')) for p in idea if clean(p.get('text'))]
+    count = len(texts)
+    if name == 'page_example':
+        return count >= 2 and example_intro(texts[0]) and len(texts[1]) >= 4
+    if name == 'error_stack':
+        return count >= 3 and any(error_head(text) for text in texts)
+    if name == 'doc_stack':
+        return count >= 3 and any(step_intro(text) for text in texts)
+    if name == 'scattered_capsules':
+        return count >= 3 and (any(step_intro(text) for text in texts) or any(tool_intro(text) for text in texts))
+    if name == 'card_carousel':
+        return sum(1 for text in texts if list_item(text)) >= 2
+    if name == 'headline_badges':
+        return any(list_intro(text) for text in texts) or sum(1 for text in texts if list_item(text)) >= 2
+    if name == 'editor_mock':
+        return any(tool_intro(text) for text in texts) and sum(1 for text in texts if tool_step(text)) >= 2
+    if name == 'contrast_arrow':
+        return any(is_contrast(text) for text in texts) or (count >= 2 and contrast_open(texts[0]))
+    if name == 'flow_pills':
+        return count >= 2 and any(is_contrast(text) or contrast_open(text) or step_intro(text) for text in texts)
+    if name == 'side_panel':
+        return count >= 2 or any(definition_follow(text) for text in texts)
+    if name == 'headline_pill':
+        return any(is_question(text) for text in texts)
+    if name in ('blur_lines', 'pill_lines', 'title_card', 'neon_end'):
+        return count >= 1
+    return False
+
+
+def pick_template(idea, index, used):
+    fits = [name for name in PRIORITY if rich(name, idea)]
+    unused = [name for name in fits if name not in used]
+    if index == 0:
+        if unused:
+            return unused[0]
+        return fits[0] if fits else 'pill_lines'
+    if unused:
+        return unused[0]
+    simples = [name for name in ('blur_lines', 'pill_lines', 'headline_pill', 'side_panel') if rich(name, idea) or name in ('blur_lines', 'pill_lines')]
+    return simples[index % len(simples)]
+
+
+def _can_pip(wide_sec, total, cursor, step):
+    if total <= 0:
+        return True
+    rest = max(0.0, total - (cursor + step))
+    return wide_sec + rest >= 0.60 * total - 0.25
+
+
+def _want_push(text, cursor, push_sec, last_push, wide_sec, total, step):
+    if not text or len(text) < 2 or len(text) > 14:
+        return False
+    if cursor - last_push < 11:
+        return False
+    push_step = min(step, 2.2)
+    if push_sec + push_step > 0.15 * total + 0.05:
+        return False
+    rest = max(0.0, total - (cursor + push_step))
+    return wide_sec + rest >= 0.60 * total - 0.25
+
+
+def choose_presentation(kind, idea, room, cursor, wide_sec, push_sec, last_push, side, total):
+    step = min(MAX_SHOT, room)
+    if kind == 'title_card':
+        return kind, 'WIDE_C', step
+    if kind in PAGE_KINDS:
+        if _can_pip(wide_sec, total, cursor, step):
+            return kind, 'PIP', step
+        kind = 'pill_lines'
+    current = clean(phrase_at(idea, cursor + 0.05).get('text')) if idea else ''
+    if kind in ('pill_lines', 'blur_lines', 'headline_pill', 'side_panel') and _want_push(current, cursor, push_sec, last_push, wide_sec, total, step):
+        return kind, 'PUSH', min(step, 2.2)
+    return kind, ('WIDE_R' if side == 'WIDE_L' else 'WIDE_L'), step
+
+
+def realize(kind, texts, start, end, blocked):
+    if kind == 'title_card':
+        return 'overlay', title_card(texts, start, end)
+    if kind == 'side_panel':
+        return 'overlay', side_panel(texts, start, end)
+    if kind == 'headline_pill':
+        return 'overlay', headline_pill(texts, start, end)
+    if kind == 'pill_lines':
+        return 'overlay', pill_lines(texts, start, end)
+    if kind == 'blur_lines':
+        return 'overlay', blur_lines(texts, start, end)
+    if kind == 'flow_pills':
+        spec = flow_pills(texts, start, end)
+        filled = sum(1 for key in ('a', 'b', 'bottom') if spec.get(key))
+        if filled >= 2:
+            return 'overlay', spec
+        return 'overlay', headline_pill(texts, start, end)
+    if kind == 'contrast_arrow':
+        return 'overlay', contrast_arrow(texts, start, end, blocked)
+    if kind == 'headline_badges':
+        return 'overlay', headline_badges(texts, start, end)
+    if kind == 'error_stack':
+        return 'overlay', error_stack(texts, start, end)
     if kind == 'page_example':
         layer = page_example(texts, start, end)
-    return {
-        'start': start,
-        'end': end,
-        'bg': 'offwhite',
-        'layers': [layer],
-    }
-
-
-def choose_later(text, cursor, last_pip, last_push, push_sec, wide_sec, total, step_room):
-    if is_question(text):
-        return 'headline_pill', 'WIDE', 2.8
-    if is_contrast(text):
-        return 'contrast_arrow', 'WIDE', 2.8
-    if is_list(text):
-        return 'headline_badges', 'WIDE', 2.8
-    if len(text) >= 18 and cursor - last_pip > 12:
-        step = 3.0
-        if wide_sec + (total - cursor - step) >= 0.60 * total:
-            return 'page', 'PIP', step
-    if len(text) <= 12 and text.endswith(('！', '!', '？', '?')) and cursor - last_push > 12:
-        step = 2.2
-        if push_sec + step <= 0.15 * total + 1e-6 and step <= 2.5 and wide_sec + (total - cursor - step) >= 0.60 * total:
-            return 'pill_lines', 'PUSH', step
-    return ROTATE[step_room % len(ROTATE)], 'WIDE', 2.8
+        if layer:
+            return 'page', layer
+        return 'overlay', headline_pill(texts, start, end)
+    if kind == 'scattered_capsules':
+        layer = scattered(texts, start, end)
+        if layer:
+            return 'page', layer
+        return 'overlay', pill_lines(texts, start, end)
+    if kind == 'doc_stack':
+        layer = doc_stack(texts, start, end)
+        if layer:
+            return 'page', layer
+        return 'overlay', flow_pills(texts, start, end)
+    if kind == 'card_carousel':
+        layer = card_carousel(texts, start, end)
+        if layer:
+            return 'page', layer
+        return 'overlay', headline_badges(texts, start, end)
+    if kind == 'editor_mock':
+        layer = editor_mock(texts, start, end)
+        if layer:
+            return 'page', layer
+        return 'overlay', side_panel(texts, start, end)
+    if kind == 'neon_end':
+        return 'page', neon_end(texts, start, end)
+    return 'overlay', pill_lines(texts, start, end)
 
 
 _STYLE = None
@@ -361,22 +579,25 @@ def iter_timed_texts(node, inherited_at=0.0):
     if not isinstance(node, dict):
         return
     if isinstance(node.get('text'), str) and clean(node.get('text')):
-        at = node['at'] if isinstance(node.get('at'), (int, float)) else inherited_at
-        yield clean(node['text']), float(at)
+        at_time = node['at'] if isinstance(node.get('at'), (int, float)) else inherited_at
+        yield clean(node['text']), float(at_time)
+    for key in ('header', 'title'):
+        if isinstance(node.get(key), str) and clean(node.get(key)):
+            yield clean(node[key]), inherited_at
     if isinstance(node.get('caption'), str) and clean(node.get('caption')):
         title = node.get('title')
-        at = inherited_at
+        at_time = inherited_at
         if isinstance(title, list) and title and isinstance(title[0].get('at'), (int, float)):
-            at = float(title[0]['at'])
+            at_time = float(title[0]['at'])
         elif isinstance(title, dict) and isinstance(title.get('at'), (int, float)):
-            at = float(title['at'])
-        yield clean(node['caption']), at
+            at_time = float(title['at'])
+        yield clean(node['caption']), at_time
     card = node.get('card')
     if isinstance(card, dict):
-        at = float(card['at']) if isinstance(card.get('at'), (int, float)) else inherited_at
+        at_time = float(card['at']) if isinstance(card.get('at'), (int, float)) else inherited_at
         for key in ('lead', 'big', 'node'):
             if isinstance(card.get(key), str) and clean(card.get(key)):
-                yield clean(card[key]), at
+                yield clean(card[key]), at_time
     for key, value in node.items():
         if key == 'card':
             continue
@@ -391,19 +612,6 @@ def reserve_node(node, start, end, reserved):
             continue
         seen.add(text)
         reserved.append((text, start, end))
-
-
-def available_texts(phrases, start, end, reserved, until):
-    found = []
-    for text in texts_between(phrases, start, end):
-        text = clean(text)
-        if not text:
-            continue
-        if any(text == prev and overlaps(a, b, start, until) for prev, a, b in reserved):
-            continue
-        if text not in found:
-            found.append(text)
-    return found
 
 
 def _shot_index(shots, t):
@@ -448,14 +656,14 @@ def _graphics_at(scenes, t, morph):
         for overlay in scenes.get('overlays') or []:
             if t < overlay['start'] - 0.06 or t > overlay['end'] + 1e-9:
                 continue
-            for text, at in iter_timed_texts(overlay):
-                if t + 1e-9 >= at - 0.06:
+            for text, at_time in iter_timed_texts(overlay):
+                if t + 1e-9 >= at_time - 0.06:
                     texts.append(text)
     if _page_on(scenes, t, morph):
         pages = [page for page in scenes.get('pages') or [] if page['start'] <= t + 1e-9]
         if pages:
-            for text, at in iter_timed_texts(pages[-1]):
-                if t + 1e-9 >= at - 0.06:
+            for text, at_time in iter_timed_texts(pages[-1]):
+                if t + 1e-9 >= at_time - 0.06:
                     texts.append(text)
     return texts
 
@@ -487,7 +695,7 @@ def duplicate_frames(scenes, phrases, fps=30, t1=None):
 
 def _visible_until(beat, beats, morph, total):
     if beat['shot'] in ('PIP', 'END'):
-        later = [row for row in beats if row['start'] > beat['start'] + 1e-6 and not row.get('drop')]
+        later = [row for row in beats if row['start'] > beat['start'] + 1e-6]
         if not later:
             return total
         nxt = later[0]
@@ -501,94 +709,169 @@ def _blocked(reserved, start, until):
     return {text for text, a, b in reserved if overlaps(a, b, start, until)}
 
 
-def draft(phrases, total):
-    beats = []
-    wide_sec = push_sec = 0.0
-    last_pip = -99.0
-    last_push = -99.0
-    pip_count = 0
-    side = 'WIDE_L'
+SIMPLE_KINDS = ('blur_lines', 'pill_lines', 'headline_pill', 'side_panel')
+STRUCTURAL_KINDS = ('title_card', 'neon_end')
 
-    def add_beat(start, end, shot, kind, page_kind, count):
-        span_start, span_end = overlay_span(start, end)
-        beats.append({
-            'start': round(start, 3),
-            'end': round(end, 3),
-            'shot': shot,
-            'kind': kind,
-            'page_kind': page_kind,
-            'pip_count': count,
-            'span_start': span_start,
-            'span_end': span_end,
-        })
 
-    for start, end, shot, kind in OPENING:
-        if start >= total - 0.15:
-            break
-        end = min(end, total)
-        add_beat(start, end, shot, kind, 'page_example' if shot == 'PIP' else '', pip_count)
-        if shot == 'PIP':
-            pip_count += 1
-            last_pip = start
-        elif shot == 'PUSH':
-            push_sec += end - start
-            last_push = start
-        else:
-            wide_sec += end - start
-        if shot.startswith('WIDE'):
-            side = 'WIDE_R' if shot == 'WIDE_L' else 'WIDE_L'
+def _holds(kind, texts):
+    """The template can be drawn from these phrases without an empty field."""
+    if not texts:
+        return False
+    _role, spec = realize(kind, texts, 0.0, 1.0, ())
+    if spec.get('template') != kind:
+        return False
+    if kind == 'flow_pills' and sum(1 for key in ('a', 'b', 'bottom') if spec.get(key)) < 2:
+        return False
+    if kind == 'page_example' and len((spec.get('card') or {}).get('big') or '') < 4:
+        return False
+    return any(True for _text, _at in iter_timed_texts(spec))
 
-    cursor = 20.2
-    rotate_at = 0
-    while cursor < total - 3.4:
-        if beats and abs(beats[-1]['start'] - cursor) < 0.05:
-            cursor = round(cursor + 0.1, 3)
+
+def _simple_kind(texts):
+    if any(is_question(text) for text in texts):
+        return 'headline_pill'
+    if len(texts) >= 2:
+        return 'side_panel'
+    return 'blur_lines'
+
+
+def _free_texts(texts, start, until, reserved):
+    found = []
+    for text in texts:
+        text = clean(text)
+        if not text or text in found:
             continue
-        phrase = phrase_at(phrases, cursor + 0.2)
-        text = clean(phrase.get('text'))
-        kind, shot, step = choose_later(text, cursor, last_pip, last_push, push_sec, wide_sec, total, rotate_at)
-        step = min(step, total - cursor)
-        if step < 0.8:
-            break
-        if shot == 'WIDE':
-            side = 'WIDE_R' if side == 'WIDE_L' else 'WIDE_L'
-            shot = side
-            rotate_at += 1
-            wide_sec += step
-        elif shot == 'PUSH':
-            push_sec += step
-            last_push = cursor
+        if any(text == prev and overlaps(a, b, start, until) for prev, a, b in reserved):
+            continue
+        found.append(text)
+    return found
+
+
+def _beat(start, end, shot, kind):
+    span_start, span_end = overlay_span(start, end)
+    return {
+        'start': round(start, 3),
+        'end': round(end, 3),
+        'shot': shot,
+        'kind': kind,
+        'span_start': span_start,
+        'span_end': span_end,
+    }
+
+
+def _close_with_end(beats, total):
+    if total < 6 or not beats:
+        return beats
+    end_at = round(min(total - 0.8, max(beats[0]['start'] + 1.0, total - MAX_SHOT)), 3)
+    if end_at >= total - 0.3:
+        return beats
+    kept = []
+    for beat in beats:
+        if beat['start'] >= end_at - 0.05:
+            continue
+        if beat['end'] > end_at:
+            beat = dict(beat)
+            beat['end'] = round(end_at, 3)
+            beat['span_start'], beat['span_end'] = overlay_span(beat['start'], beat['end'])
+        if beat['end'] > beat['start'] + 0.05 and (beat['end'] <= end_at + 0.02 or beat['end'] - beat['start'] >= 0.3):
+            kept.append(beat)
+    if not kept:
+        kept = [beats[0]]
+    ending = _beat(end_at, total, 'END', 'neon_end')
+    ending['idea'] = kept[-1].get('idea', 0)
+    kept.append(ending)
+    return kept
+
+
+def _page_bg(template):
+    return {
+        'doc_stack': 'dark_glow',
+        'card_carousel': 'grey',
+        'scattered_capsules': 'grey',
+        'neon_end': 'dark_end',
+    }.get(template, 'offwhite')
+
+
+def draft(phrases, total):
+    ideas = group_ideas(phrases)
+    spans = []
+    for index, idea in enumerate(ideas):
+        start = max(0.0, idea[0]['s'] - 0.04)
+        nxt = ideas[index + 1][0]['s'] - 0.04 if index + 1 < len(ideas) else total
+        end = min(total, max(nxt, idea[-1]['e'] + 0.12))
+        if end < start + 0.3:
+            end = min(total, start + 0.3)
+        spans.append((start, end, idea))
+    if spans:
+        start, end, idea = spans[0]
+        spans[0] = (0.0, max(end, 0.4), idea)
+
+    beats = []
+    used = set()
+    cursor = 0.0
+    wide_sec = push_sec = 0.0
+    last_push = -99.0
+    side = 'WIDE_L'
+    seen = {}
+    guard = 0
+    while cursor < total - 0.12 and guard < 500:
+        guard += 1
+        idea_i = None
+        span_end = total
+        for index, (start, end, _idea) in enumerate(spans):
+            if start - 0.02 <= cursor < end - 0.02:
+                idea_i = index
+                span_end = end
+                break
+        inside = idea_i is not None
+        if idea_i is None:
+            future = [index for index, (start, _end, _idea) in enumerate(spans) if start > cursor + 0.02]
+            if future:
+                idea_i = max(0, future[0] - 1)
+                span_end = spans[future[0]][0]
+            elif spans:
+                idea_i = len(spans) - 1
+                span_end = total
+            else:
+                break
+        idea = spans[idea_i][2]
+        room = min(MAX_SHOT, max(0.0, span_end - cursor), total - cursor)
+        if room < 0.08:
+            if beats and room > 0:
+                beats[-1]['end'] = round(min(total, beats[-1]['end'] + room), 3)
+                beats[-1]['span_start'], beats[-1]['span_end'] = overlay_span(beats[-1]['start'], beats[-1]['end'])
+            cursor = round(min(total, span_end if span_end > cursor + 0.01 else cursor + 0.08), 3)
+            continue
+        if inside:
+            index = seen.get(idea_i, 0)
+            kind = 'title_card' if idea_i == 0 and index == 0 else pick_template(idea, index, used)
+            seen[idea_i] = index + 1
         else:
-            last_pip = cursor
-        end = cursor + step
-        add_beat(cursor, end, shot, kind if shot != 'PIP' else 'page', 'page' if shot == 'PIP' else '', pip_count)
-        if shot == 'PIP':
-            pip_count += 1
-        cursor = round(end, 3)
+            kind = 'blur_lines' if int(cursor * 2) % 2 == 0 else 'pill_lines'
+        kind, shot, step = choose_presentation(kind, idea, room, cursor, wide_sec, push_sec, last_push, side, total)
+        step = min(step, room, total - cursor)
+        if step < 0.08:
+            cursor = round(min(total, cursor + max(room, 0.08)), 3)
+            continue
+        start = round(cursor, 3)
+        end = round(min(total, cursor + step), 3)
+        if end <= start + 0.05:
+            cursor = round(min(total, start + 0.08), 3)
+            continue
+        beats.append(_beat(start, end, shot, kind))
+        beats[-1]['idea'] = idea_i
+        used.add(kind)
+        dur = end - start
+        if shot == 'PUSH':
+            push_sec += dur
+            last_push = start
+        elif shot not in ('PIP', 'END'):
+            wide_sec += dur
+            if shot.startswith('WIDE') and shot != 'WIDE_C':
+                side = shot
+        cursor = end
 
-    if total > 8 and beats and beats[-1]['shot'] != 'END' and total - beats[-1]['start'] > 1.2:
-        end_at = round(max(beats[-1]['start'] + 0.8, min(total - 0.4, max(beats[-1]['start'] + 0.8, total - 3.2))), 3)
-        if end_at > beats[-1]['start'] + 0.2 and end_at < total:
-            for beat in beats:
-                if beat['start'] >= end_at:
-                    beat['drop'] = True
-                elif beat['shot'] not in ('PIP', 'END') and beat['span_end'] > end_at:
-                    beat['span_end'] = round(end_at - 0.02, 3)
-                elif beat['shot'] in ('PIP', 'END') and beat['end'] > end_at:
-                    beat['end'] = round(end_at - 0.02, 3)
-                    beat['span_end'] = beat['end']
-            beats = [beat for beat in beats if not beat.get('drop') and beat['start'] < end_at - 0.05 and beat['end'] > beat['start']]
-            beats.append({
-                'start': end_at,
-                'end': round(total, 3),
-                'shot': 'END',
-                'kind': 'neon_end',
-                'page_kind': 'neon_end',
-                'pip_count': pip_count,
-                'span_start': end_at,
-                'span_end': round(total, 3),
-            })
-
+    beats = _close_with_end(beats, total)
     _lead, hold, morph = clock()
     title_end = 0.0
     for beat in beats:
@@ -600,7 +883,7 @@ def draft(phrases, total):
         bar_at = phrases[0]['e'] + hold + 0.02
         if title_end:
             bar_at = max(bar_at, title_end + 0.02)
-        bar_at = round(bar_at, 3)
+        bar_at = round(min(total - 0.05, bar_at), 3)
     chapters = [{'title': '', 'at': 0}]
     reserved = []
     if first and 0 < bar_at < total - 0.05:
@@ -608,27 +891,71 @@ def draft(phrases, total):
         reserved.append((first, bar_at, total))
 
     overlays, pages = [], []
+    built = []
+    missed = []
     for beat in beats:
         until = _visible_until(beat, beats, morph, total)
-        if beat['shot'] == 'END':
-            texts = available_texts(phrases, beat['start'], beat['end'], reserved, total)
-            layer = neon_end(texts, beat['start'], beat['end'])
-            page = {'start': beat['start'], 'end': beat['end'], 'bg': 'dark_end', 'layers': [layer]}
-            reserve_node(page, beat['start'], total, reserved)
-            pages.append(page)
-            continue
-        if beat['shot'] == 'PIP':
-            texts = available_texts(phrases, beat['start'], beat['end'], reserved, until)
-            page = page_for(beat['page_kind'], texts, beat['span_start'], beat['end'], beat['pip_count'])
-            reserve_node(page, beat['span_start'], until, reserved)
-            pages.append(page)
-            continue
-        texts = available_texts(phrases, beat['start'], beat['end'], reserved, beat['span_end'])
-        overlay = build_overlay(beat['kind'], texts, beat['span_start'], beat['span_end'], phrases, _blocked(reserved, beat['start'], beat['span_end']))
-        reserve_node(overlay, beat['span_start'], beat['span_end'], reserved)
-        overlays.append(overlay)
+        idea = spans[beat['idea']][2] if beat.get('idea') is not None and beat['idea'] < len(spans) else phrases
+        whole = [clean(p.get('text')) for p in idea]
+        overlap = [clean(p.get('text')) for p in idea if p['e'] > beat['start'] - 0.05 and p['s'] < beat['end'] + 0.15]
 
-    shots = [{'at': beat['start'], 'shot': beat['shot']} for beat in beats]
+        def pool_for(name, whole=whole, overlap=overlap):
+            return whole if name in RICH_WHOLE else overlap
+
+        def ready(name):
+            return _holds(name, _free_texts(pool_for(name), beat['start'], until, reserved))
+
+        kind = beat['kind']
+        if kind not in STRUCTURAL_KINDS and not ready(kind):
+            if kind not in SIMPLE_KINDS and kind not in missed:
+                missed.append(kind)
+            replacement = None
+            for name in missed:
+                if name in PAGE_KINDS and beat['shot'] not in ('PIP', 'END'):
+                    continue
+                if rich(name, idea) and ready(name):
+                    replacement = name
+                    break
+            if replacement:
+                missed.remove(replacement)
+                kind = replacement
+            else:
+                free_now = _free_texts(overlap, beat['start'], until, reserved)
+                kind = _simple_kind(free_now) if free_now else kind
+        elif kind in SIMPLE_KINDS and missed:
+            for name in list(missed):
+                if name in PAGE_KINDS and beat['shot'] not in ('PIP', 'END'):
+                    continue
+                if rich(name, idea) and ready(name):
+                    missed.remove(name)
+                    kind = name
+                    break
+        texts = _free_texts(pool_for(kind), beat['start'], until, reserved)
+        role, spec = realize(kind, texts, beat['span_start'], beat['span_end'] if role_expects_overlay(beat) else beat['end'], _blocked(reserved, beat['start'], until))
+        if not any(True for _text, _at in iter_timed_texts(spec)):
+            built.append(beat)
+            continue
+        # realize's start/end: pages should cover the shot, overlays the span
+        if role == 'page':
+            spec['start'] = beat['start']
+            spec['end'] = beat['end']
+            if beat['shot'] not in ('PIP', 'END'):
+                beat = dict(beat)
+                beat['shot'] = 'END' if spec['template'] == 'neon_end' else 'PIP'
+            page = {'start': beat['start'], 'end': beat['end'], 'bg': _page_bg(spec['template']), 'layers': [spec]}
+            reserve_node(page, beat['start'], until, reserved)
+            pages.append(page)
+            built.append(beat)
+            continue
+        if beat['shot'] in ('PIP', 'END') and spec['template'] not in ('neon_end',):
+            beat = dict(beat)
+            beat['shot'] = 'WIDE_L' if int(beat['start']) % 2 == 0 else 'WIDE_R'
+        spec['start'], spec['end'] = beat['span_start'], beat['span_end']
+        reserve_node(spec, beat['span_start'], beat['span_end'], reserved)
+        overlays.append(spec)
+        built.append(beat)
+
+    shots = [{'at': beat['start'], 'shot': beat['shot']} for beat in built]
     scenes = {
         'chapters': chapters,
         'shots': shots,
@@ -641,11 +968,22 @@ def draft(phrases, total):
     if repeated:
         raise ValueError('同一画面里有重复的句子: %s' % repeated[:8])
     stills = {
-        'wide': round(min(4.05, max(0.4, total - 0.2)), 3),
-        'push': round(min(9.85, max(0.8, total - 0.2)), 3),
-        'pip': round(min(12.35, max(1.2, total - 0.2)), 3),
+        'wide': _still_at(built, lambda shot: shot.startswith('WIDE'), 4.0, total),
+        'push': _still_at(built, lambda shot: shot == 'PUSH', 9.0, total),
+        'pip': _still_at(built, lambda shot: shot == 'PIP', 12.0, total),
     }
     return scenes, stills
+
+
+def role_expects_overlay(beat):
+    return beat['kind'] not in PAGE_KINDS and beat['kind'] != 'neon_end'
+
+
+def _still_at(beats, pred, fallback, total):
+    for beat in beats:
+        if beat['start'] < min(20, total) and pred(beat['shot']):
+            return round(min(max(0.2, beat['start'] + 0.35), max(0.4, min(19.5, total - 0.2))), 3)
+    return round(min(fallback, max(0.4, min(19.5, total - 0.2))), 3)
 
 
 def main(wd):
@@ -657,9 +995,13 @@ def main(wd):
     scenes, stills = draft(phrases, total)
     json.dump(scenes, open(os.path.join(wd, 'scenes.json'), 'w'), ensure_ascii=False, indent=1)
     json.dump(stills, open(os.path.join(wd, 'preview_beats.json'), 'w'), ensure_ascii=False, indent=1)
-    names = [row['template'] for row in scenes['overlays'] if row['start'] < 20]
-    pages = [row['layers'][0]['template'] for row in scenes['pages'] if row['start'] < 20]
-    print('opening', ' '.join(names + pages), 'stills', stills)
+    names = []
+    for row in scenes['overlays']:
+        names.append(row['template'])
+    for row in scenes['pages']:
+        names.append(row['layers'][0]['template'])
+    print('templates', ' '.join(sorted(set(names))))
+    print('opening', ' '.join(names), 'stills', stills)
 
 
 if __name__ == '__main__':

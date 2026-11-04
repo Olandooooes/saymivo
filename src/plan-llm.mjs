@@ -109,8 +109,8 @@ function locateSpan(text, sentenceWords, {maxChars = 80} = {}) {
     let joined = '';
     for (let end = start; end < sentenceWords.length; end++) {
       joined += fold(sentenceWords[end].text);
-      if (joined.length > maxChars && !joined.includes(needle)) break;
-      if (joined.includes(needle)) return {text: needle, atWordId: sentenceWords[start].id, atMs: sentenceWords[start].startMs};
+      if (joined === needle) return {text: needle, atWordId: sentenceWords[start].id, atMs: sentenceWords[start].startMs};
+      if (joined.length > needle.length || !needle.startsWith(joined)) break;
     }
   }
   return null;
@@ -142,14 +142,14 @@ export function adoptLlmDraft(payload, base, words, removes = []) {
     else if (proposed.shot) warnings.push({sentenceId: sentence.id, code: 'dropped', message: '景别不在允许的三种里，已保留原来的景别'});
     const local = wordsInSentence(sentence, kept);
     if (proposed.punch?.text) {
-      const hit = locateSpan(proposed.punch.text, local, {maxChars: 12});
+      const hit = locateSpan(proposed.punch.text, local);
       if (!hit) {
         next.punch = null;
         warnings.push({sentenceId: sentence.id, code: 'dropped', message: '大字不是保留词里的连续文字，已丢掉'});
       } else next.punch = hit;
     }
     for (const label of proposed.labels ?? []) {
-      const hit = locateSpan(label?.text, local, {maxChars: 12});
+      const hit = locateSpan(label?.text, local);
       if (!hit) warnings.push({sentenceId: sentence.id, code: 'dropped', message: '标签不在原话里，已丢掉'});
       else next.labels.push({text: hit.text, atMs: hit.atMs, atWordId: hit.atWordId});
     }
@@ -161,8 +161,8 @@ export function adoptLlmDraft(payload, base, words, removes = []) {
         else items.push({id: item.id || `item-${items.length + 1}`, title: hit.text, atWordId: hit.atWordId, atMs: hit.atMs, status: 'aligned'});
       }
       let title = String(proposed.slide.title ?? '');
-      if (title && (invented(title, transcript) || [...title].length > 16)) {
-        warnings.push({sentenceId: sentence.id, code: 'dropped', message: '全屏页标题不能概括，已去掉标题'});
+      if (title && (invented(title, transcript) || !fold(transcript).includes(fold(title)))) {
+        warnings.push({sentenceId: sentence.id, code: 'dropped', message: '全屏页标题不在原话里，已去掉标题'});
         title = '';
       }
       if (items.length) next.slide = {kind: proposed.slide.kind, title, items};
@@ -175,8 +175,9 @@ export function adoptLlmDraft(payload, base, words, removes = []) {
     const proposed = (parsed.chapters ?? [])[index];
     if (!proposed?.title) return {...chapter, title: ''};
     const title = String(proposed.title);
-    if (invented(title, transcript) || [...title].length > 10) {
-      warnings.push({sentenceId: chapter.id, code: 'dropped', message: '章节标题不合法，已留空'});
+    const spokenTitle = locateSpan(title, kept, {maxChars: 40});
+    if (!spokenTitle || invented(title, transcript)) {
+      warnings.push({sentenceId: chapter.id, code: 'dropped', message: '章节标题不在原话里，已留空'});
       return {...chapter, title: ''};
     }
     return {...chapter, title};

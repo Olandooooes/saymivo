@@ -37,6 +37,23 @@ def detect_face_anchor(video_path, n=9):
     except Exception as e: print('face detection failed, using fallback:', e)
     return tuple(PS['face_anchor']['fallback'])
 
+def _blend_seam(canvas, bounds, seam):
+    """Hide the mirror crease in a band of `seam` px. Pixels further outside stay sharp."""
+    span = float(seam)
+    if span <= 0:
+        return canvas
+    height, width = canvas.shape[:2]
+    x0, y0, x1, y1 = bounds
+    yy, xx = np.ogrid[:height, :width]
+    dist = np.minimum(np.minimum(xx - x0, x1 - xx), np.minimum(yy - y0, y1 - yy))
+    weight = np.clip((span - np.abs(dist)) / span, 0.0, 1.0).astype(np.float32)
+    if float(weight.max()) <= 0:
+        return canvas
+    weight = weight * weight * (3.0 - 2.0 * weight)
+    blurred = cv2.GaussianBlur(canvas, (0, 0), max(1.0, span / 3.0))
+    return canvas * (1.0 - weight[..., None]) + blurred * weight[..., None]
+
+
 class Person:
     def __init__(self, src_w, src_h, face_frac, shots, joins=(), page_windows=()):
         self.sw, self.sh = src_w, src_h; self.face = (face_frac[0] * src_w, face_frac[1] * src_h)
@@ -106,6 +123,9 @@ class Person:
                 if bot > top:
                     ramp = np.linspace(0.0, 1.0, bot - top, dtype=np.float32)[:, None, None]
                     canvas[top:bot] = reflected[top:bot] * (1.0 - ramp) + replicated[top:bot] * ramp
+        # Soften only the seam band. The mirror outside that band stays sharp.
+        if seam > 0:
+            canvas = _blend_seam(canvas, (x0, y0, x1, y1), seam)
         return canvas
 
     def frame_bounds(self, s, fx, fy):
@@ -150,7 +170,7 @@ def laplacian_var(image, mask):
 def fill_sharpness(placed, bounds, seam_px=None):
     """Laplacian variance of the filled margin divided by the frame's own edge.
     A blurred extension falls well below 1. None when the frame already covers the canvas."""
-    seam = float(12 if seam_px is None else seam_px)
+    seam = float(FILL.get('seam_px', 12) if seam_px is None else seam_px)
     band = seam + 48.0
     h, w = placed.shape[:2]
     x0, y0, x1, y1 = bounds

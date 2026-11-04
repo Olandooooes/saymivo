@@ -371,10 +371,12 @@ def _carousel_card(cd, i, t):
     tg = font(px(24), 'Black'); d.rounded_rectangle([ox + px(40), oy + px(38), ox + px(40) + tg.getlength(cd['tag']) + px(36), oy + px(80)], px(10), fill=col('orange'))
     d.text((ox + px(58), oy + px(44)), cd['tag'], font=tg, fill=(255, 255, 255, 255))
     d.text((ox + cw - px(120), oy + px(44)), f'0{i + 1}', font=font(px(30), 'Black'), fill=(222, 218, 212, 255))
-    f = font(px(50), 'Black'); yy = oy + px(120)
+    yy = oy + px(120)
+    line_limit = cw - ox - px(80)
     for ln in cd['lines']:
+        f = font(fit_px(ln['text'], px(50), line_limit, floor=px(26)), 'Black')
         hl = ln.get('highlight')
-        if hl and cd.get('highlight_at') is not None:
+        if hl and cd.get('highlight_at') is not None and hl in ln['text']:
             k = clamp((t - cd['highlight_at']) / STYLE['motion']['highlighter_sweep']); xh = ox + px(40) + f.getlength(ln['text'][:ln['text'].index(hl)])
             if k > 0: d.rectangle([xh - 4, yy + px(40), xh - 4 + (f.getlength(hl) + 8) * ease_out(k), yy + px(64)], fill=col('highlighter'))
         d.text((ox + px(40), yy), ln['text'], font=f, fill=col('ink')); yy += px(72)
@@ -449,11 +451,17 @@ def editor_mock(c, t, P, ctx):
         sc, o = pop(t, s_['at'])
         if o <= 0: continue
         def mkc(txt=s_['text']):
-            L = Image.new('RGBA', (px(340), px(110)), (0, 0, 0, 0)); d2 = ImageDraw.Draw(L)
-            d2.rounded_rectangle([px(20), px(20), px(320), px(90)], px(18), fill=(255, 255, 255, 255), outline=(232, 229, 224, 255), width=2)
-            d2.ellipse([px(38), px(35), px(78), px(75)], fill=col('green')); draw_check(d2, px(58), px(55), px(20), w=4)
-            d2.text((px(96), px(34)), txt, font=font(px(32), 'Black'), fill=col('ink')); return L
-        scaled_layer(cached(('chk', s_['text']), mkc), sc, 0.765 * W + px(170), 0.11 * H + px(55) + j * px(82), o, c)
+            left = int(0.745 * W)
+            limit = max(px(120), W - left - px(48))
+            size = fit_px(txt, px(28), limit - px(88), floor=px(16))
+            fnt = font(size, 'Black')
+            width = int(fnt.getlength(txt)) + px(108)
+            L = Image.new('RGBA', (width, px(96)), (0, 0, 0, 0)); d2 = ImageDraw.Draw(L)
+            d2.rounded_rectangle([px(8), px(12), width - px(8), px(84)], px(18), fill=(255, 255, 255, 255), outline=(232, 229, 224, 255), width=2)
+            d2.ellipse([px(24), px(28), px(64), px(68)], fill=col('green')); draw_check(d2, px(44), px(48), px(16), w=4)
+            d2.text((px(76), px(26)), txt, font=fnt, fill=col('ink')); return L
+        layer = cached(('chk', s_['text']), mkc)
+        scaled_layer(layer, sc, int(0.745 * W) + layer.size[0] / 2, 0.11 * H + px(55) + j * px(82), o, c)
 
 def neon_end(c, t, P, ctx):
     """Closing page on a dark glow background: neon arcs rotating around the big END circle (person),

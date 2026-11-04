@@ -10,6 +10,32 @@ import path from 'node:path';
 
 const spoken = (text, start) => text.split('').map((char, index) => ({id: `w${start + index}`, text: char, startMs: start * 400 + index * 180, endMs: start * 400 + index * 180 + 160}));
 
+test('the editor preview is full bleed instead of the wallpaper window', () => {
+  const video = fs.readFileSync(new URL('../src/plan-kit/PlanVideo.tsx', import.meta.url), 'utf8');
+  const talking = fs.readFileSync(new URL('../src/plan-kit/Talking.tsx', import.meta.url), 'utf8');
+  assert.equal(video.includes('#2c2d4e'), false);
+  assert.equal(video.includes('radial-gradient(ellipse at 78%'), false);
+  assert.equal(talking.includes('borderRadius'), false);
+  assert.equal(talking.includes('data-framing="fullbleed"'), true);
+  assert.equal(talking.includes('1.08'), true);
+  assert.match(talking, /0\.8/);
+});
+
+test('a chopped clause and an invented chapter title are dropped', () => {
+  const words = spoken('这件事和以前的做法相比到底差在哪里', 0);
+  const sentence = words.map(word => word.text).join('');
+  const plan = {chapters: [{id: 'c1', title: '先看框架'}], sentences: [{
+    id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'medium',
+    punch: {text: sentence.slice(0, -3), atMs: 0},
+    labels: [{text: sentence.slice(-3), atMs: 200}],
+  }]};
+  const checked = validatePlan(plan, {words});
+  assert.equal(checked.plan.chapters[0].title, '');
+  assert.equal(checked.plan.sentences[0].punch, null);
+  const whole = validatePlan({sentences: [{id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'punch', punch: {text: sentence, atMs: 0}, labels: []}]}, {words});
+  assert.equal(whole.plan.sentences[0].punch.text, sentence.replace(/[，,。！？!?、；;：:\s]/g, ''));
+});
+
 test('framed portraits stay within the configured source-pixel cap on every shot', () => {
   assert.equal(DEFAULT_STYLE.talentFraming, 'framed');
   assert.ok(DEFAULT_STYLE.windowScale >= 0.6 && DEFAULT_STYLE.windowScale <= 0.7);

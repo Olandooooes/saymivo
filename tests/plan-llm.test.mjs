@@ -30,7 +30,7 @@ test('a valid model draft keeps word times and a punch from kept words', async (
   const result = await draftWithLlm({
     words, removes, env: {OPENAI_API_KEY: 'test'},
     fetchImpl: reply({
-      chapters: [{title: '先看框架'}],
+      chapters: [{title: '框架'}],
       sentences: base.sentences.map(sentence => sentence.text.includes('框架')
         ? {id: sentence.id, shot: 'punch', startMs: 5, punch: {text: '一个框架', atWordId: 'wrong'}}
         : {id: sentence.id, shot: 'medium'}),
@@ -41,7 +41,7 @@ test('a valid model draft keeps word times and a punch from kept words', async (
   assert.equal(punchSentence.startMs, base.sentences.find(sentence => sentence.text.includes('框架')).startMs);
   assert.equal(punchSentence.punch.text, '一个框架');
   assert.equal(punchSentence.punch.atWordId, 'c');
-  assert.equal(result.plan.chapters[0].title, '先看框架');
+  assert.equal(result.plan.chapters[0].title, '框架');
   assert.ok(result.warnings.some(item => item.code === 'time-locked'));
 });
 

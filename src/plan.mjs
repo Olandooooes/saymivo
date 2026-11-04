@@ -143,6 +143,18 @@ function sentenceSource(sentence, words) {
 
 const fold = text => String(text ?? '').replace(/[，,。！？!?、；;：:\s]/g, '');
 
+// A long clause chopped so only a few characters remain on one side is not a
+// semantic split. Short labels are left alone.
+function cutsClause(text, sentence) {
+  const whole = fold(sentence);
+  const part = fold(text);
+  if (!part || !whole || part === whole || !whole.includes(part) || [...part].length < 8) return false;
+  const at = whole.indexOf(part);
+  const left = [...whole.slice(0, at)].length;
+  const right = [...whole.slice(at + part.length)].length;
+  return (at === 0 && right > 0 && right <= 3) || (right === 0 && left > 0 && left <= 3);
+}
+
 function inventedFacts(text, source) {
   const digits = String(text ?? '').match(/\d+(?:\.\d+)?/g) ?? [];
   if (digits.some(digit => !source.includes(digit))) return true;
@@ -217,13 +229,30 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
       next.shot = 'medium';
     }
     const source = `${transcript}${sentenceSource(next, words)}`;
+    const seen = new Set();
+    const claim = text => {
+      const key = fold(text);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    };
     next.labels = (next.labels ?? []).filter(label => {
-      if (!textUsesCutWord(label.text, words, removes)) return true;
-      issues.push({sentenceId: next.id, code: 'cut-word', message: '标签用了已剪掉的词，已去掉'});
-      return false;
+      if (!fold(next.text).includes(fold(label.text)) || cutsClause(label.text, next.text)) {
+        issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '标签不是这一句里的完整原话，已去掉'});
+        return false;
+      }
+      if (textUsesCutWord(label.text, words, removes)) {
+        issues.push({sentenceId: next.id, code: 'cut-word', message: '标签用了已剪掉的词，已去掉'});
+        return false;
+      }
+      if (!claim(label.text)) {
+        issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '同一句里的文字重复了，已去掉'});
+        return false;
+      }
+      return true;
     });
     if (next.punch?.text) {
-      if (!fold(next.text).includes(fold(next.punch.text)) || inventedFacts(next.punch.text, source)) {
+      if (!fold(next.text).includes(fold(next.punch.text)) || cutsClause(next.punch.text, next.text) || inventedFacts(next.punch.text, source)) {
         next.status = 'rejected-hallucination';
         issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '大字不在原话里'});
         next.punch = null;
@@ -233,6 +262,9 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
         if (wordIsCut(word, removes) || textUsesCutWord(next.punch.text, words, removes) || (Number.isFinite(at) && (removes ?? []).some(row => row.status === 'accepted' && at >= row.startMs && at < row.endMs))) {
           next.punch = null;
           issues.push({sentenceId: next.id, code: 'cut-word', message: '大字用了已剪掉的词，已去掉'});
+        } else if (!claim(next.punch.text)) {
+          next.punch = null;
+          issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '同一句里的文字重复了，已去掉'});
         }
       }
     }
@@ -242,11 +274,11 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
         next.slide = null;
       } else {
         next.slide.items = (next.slide.items ?? []).map(item => {
-          const spoken = transcript + (next.text ?? '');
-          if (item.title && (!fold(spoken).includes(fold(item.title)) || inventedFacts(item.title, spoken))) {
+          const spoken = next.text ?? '';
+          if (item.title && (!fold(spoken).includes(fold(item.title)) || cutsClause(item.title, spoken) || inventedFacts(item.title, spoken) || !claim(item.title))) {
             next.status = 'rejected-hallucination';
-            issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '全屏页文字不在原话里'});
-            return {...item, status: 'rejected-hallucination'};
+            issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '全屏页文字不在这一句原话里'});
+            return {...item, title: '', status: 'rejected-hallucination'};
           }
           if (item.title && textUsesCutWord(item.title, words, removes)) return {...item, status: 'proposed', atMs: null};
           const word = wordById(words, item.atWordId);
@@ -258,7 +290,7 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
     return next;
   });
   const chapters = (plan?.chapters ?? []).map(chapter => {
-    if (chapter.title && inventedFacts(chapter.title, transcript)) {
+    if (chapter.title && (!fold(transcript).includes(fold(chapter.title)) || inventedFacts(chapter.title, transcript))) {
       issues.push({sentenceId: chapter.id, code: 'rejected-hallucination', message: '章节标题不在原话里'});
       return {...chapter, status: 'rejected-hallucination', title: ''};
     }
@@ -368,17 +400,18 @@ export function highlightAtMs(item) {
 }
 
 function chunkWords(words, gapMs, punctuation, maxChars = Infinity) {
+  // maxChars is ignored. A character budget must not cut a clause in half.
+  void maxChars;
   const groups = [];
   let current = [];
-  const length = group => group.reduce((sum, word) => sum + [...word.text].length, 0);
   for (const word of words) {
     const previous = current.at(-1);
-    if (previous && (word.startMs - previous.endMs >= gapMs || length(current) >= maxChars)) {
+    if (previous && word.startMs - previous.endMs >= gapMs) {
       groups.push(current);
       current = [];
     }
     current.push(word);
-    if (punctuation.test(word.text) || length(current) >= maxChars) {
+    if (punctuation.test(word.text)) {
       groups.push(current);
       current = [];
     }
