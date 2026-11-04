@@ -185,8 +185,9 @@ def headline_badges(c, t, P, ctx):
     Trigger: announcing N criteria / points."""
     q = _out(P, t, 0.25)
     if P.get('pill'): _pop_left(c, outline_pill(P['pill']['text'], px(42)), t, P['pill']['at'] - 0.05, ctx['x0'], int(0.18 * H), q)
-    sc, o = pop(t, P['headline']['at'] - 0.04, 0.36)
-    scaled_layer(yellow(P['headline']['text'], px(132)), sc, (ctx['x0'] + ctx['x1']) / 2, int(0.72 * H), o * q, c)
+    if P.get('headline'):
+        sc, o = pop(t, P['headline']['at'] - 0.04, 0.36)
+        scaled_layer(yellow(P['headline']['text'], px(132)), sc, (ctx['x0'] + ctx['x1']) / 2, int(0.72 * H), o * q, c)
     b = P.get('badges')
     if b:
         bx = b.get('x', 0.70 if ctx['x0'] < W / 2 else 0.05)
@@ -195,16 +196,17 @@ def headline_badges(c, t, P, ctx):
             scaled_layer(badge(i + 1, px(34)), sc, int((bx + 0.085 * i) * W) + px(40), int(0.18 * H), o * q, c)
 
 def flow_pills(c, t, P, ctx):
-    """A —(flowing dotted arrow)→ B with a big yellow line underneath. Trigger: 'from X to Y' process sentence."""
+    """A —(flowing dotted arrow)→ B with a big yellow line underneath. Trigger: 'from X to Y' process sentence.
+    A, B, and the line are optional: a missing phrase stays off screen instead of repeating another one."""
     q = _out(P, t, 0.2)
     if P.get('header'):
         sc, o = pop(t, P['header']['at'] - 0.03)
         scaled_layer(text_layer(P['header']['text'], px(64), 'Black', stroke=6), sc, W / 2, int(0.12 * H), o * q, c)
-    A, B = P['a'], P['b']; yy = 0.30 * H
-    a_size = fit_px(A['text'], px(56), int(0.26 * W), px(24))
-    b_size = fit_px(B['text'], px(56), int(0.26 * W), px(24))
-    sc, o = pop(t, A['at'] - 0.08); scaled_layer(outline_pill(A['text'], a_size), sc, 0.17 * W, yy, o * q, c)
-    if t >= A['at'] + 0.17:
+    A, B = P.get('a'), P.get('b'); yy = 0.30 * H
+    if A:
+        a_size = fit_px(A['text'], px(56), int(0.26 * W), px(24))
+        sc, o = pop(t, A['at'] - 0.08); scaled_layer(outline_pill(A['text'], a_size), sc, 0.17 * W, yy, o * q, c)
+    if A and B and t >= A['at'] + 0.17:
         ka = ease_out((t - A['at'] - 0.17) / 0.5); La = Image.new('RGBA', (W, px(120)), (0, 0, 0, 0)); da = ImageDraw.Draw(La)
         xa, xb = 0.27 * W, lerp(0.27 * W, 0.71 * W, ka); st = px(26); yc = px(60)
         for s_ in np.arange(xa, xb, st):
@@ -212,8 +214,10 @@ def flow_pills(c, t, P, ctx):
             da.ellipse([s_ - px(6), yc - px(6), s_ + px(6), yc + px(6)], fill=col('yellow')[:3] + (a,))
         if ka > 0.95: da.polygon([(xb + 4, yc - px(20)), (xb + px(30), yc), (xb + 4, yc + px(20))], fill=col('yellow'))
         alpha_comp(c, La, 0, int(yy - yc), q)
-    sc, o = pop(t, B['at'] - 0.08)
-    scaled_layer(pill(B['text'], b_size, fg=col('ink'), fill=col('yellow'), padx=px(30), pady=px(14)), sc, 0.83 * W, yy, o * q, c)
+    if B:
+        b_size = fit_px(B['text'], px(56), int(0.26 * W), px(24))
+        sc, o = pop(t, B['at'] - 0.08)
+        scaled_layer(pill(B['text'], b_size, fg=col('ink'), fill=col('yellow'), padx=px(30), pady=px(14)), sc, 0.83 * W, yy, o * q, c)
     if P.get('bottom'):
         sc, o = pop(t, P['bottom']['at'] - 0.05, 0.36)
         scaled_layer(yellow(P['bottom']['text'], px(110)), sc, W / 2, int(0.72 * H), o * q, c)
@@ -246,24 +250,29 @@ def page_example(c, t, P, ctx):
             if P.get('caption'): draw_text(L, (x + 2, px(222) + fu[0]), P['caption'], font(px(24), 'Medium'), (130, 126, 120, int(230 * fu[1])))
     alpha_comp(c, L, 0, 0, 1 - ex)
     cd = P.get('card')
-    if cd and t >= cd['at'] - 0.1:
+    lead = (cd or {}).get('lead') or ''
+    big = (cd or {}).get('big') or ''
+    node = (cd or {}).get('node') or ''
+    if cd and t >= cd['at'] - 0.1 and (lead or big or node):
         k = ease_out((t - cd['at'] + 0.1) / 0.5); cw, chh = int(0.62 * W), int(0.36 * H)
         Cd = card(cw, chh, px(20), glow=(240, 120, 130)).copy(); d = ImageDraw.Draw(Cd); ox = oy = 40
-        draw_text(Cd, (ox + px(44), oy + px(40)), cd.get('lead', ''), font(px(26), 'Bold'), col('muted'), px(3))
-        big = cd.get('big', '')
-        bsize = fit_px(big, px(44), cw - px(140), px(20))
-        draw_text(Cd, (ox + px(44), oy + px(84)), big, font(bsize, 'Black'), col('ink'))
-        rx, ry = ox + int(cw * 0.48), oy + px(44); nw = px(250)
-        d.rounded_rectangle([rx, ry, rx + nw, ry + px(64)], px(14), fill=col('orange'))
-        nsize = fit_px(cd['node'], px(30), nw - px(28), px(14))
-        f = font(nsize, 'Black'); d.text((rx + nw / 2 - f.getlength(cd['node']) / 2, ry + (px(64) - nsize) / 2), cd['node'], font=f, fill=(255, 255, 255, 255))
-        for i in range(cd.get('children', 3)):
-            a_ = clamp((t - cd['at'] - 0.5 - 0.12 * i) / 0.3)
-            if a_ <= 0: continue
-            cx = rx - int(cw * 0.11) + i * px(150); cy = oy + px(170)
-            d.line([rx + nw / 2, ry + px(64), cx + px(60), cy], fill=(210, 205, 198, int(255 * a_)), width=3)
-            d.rounded_rectangle([cx, cy, cx + px(120), cy + px(70)], px(12), outline=(200, 196, 190, int(255 * a_)), width=3)
-            for j in range(2): d.rounded_rectangle([cx + px(18), cy + px(20 + j * 20), cx + px(100 - j * 30), cy + px(30 + j * 20)], 4, fill=(232, 229, 224, int(255 * a_)))
+        if lead:
+            draw_text(Cd, (ox + px(44), oy + px(40)), lead, font(px(26), 'Bold'), col('muted'), px(3))
+        if big:
+            bsize = fit_px(big, px(44), cw - px(140), px(20))
+            draw_text(Cd, (ox + px(44), oy + px(84)), big, font(bsize, 'Black'), col('ink'))
+        if node:
+            rx, ry = ox + int(cw * 0.48), oy + px(44); nw = px(250)
+            d.rounded_rectangle([rx, ry, rx + nw, ry + px(64)], px(14), fill=col('orange'))
+            nsize = fit_px(node, px(30), nw - px(28), px(14))
+            f = font(nsize, 'Black'); d.text((rx + nw / 2 - f.getlength(node) / 2, ry + (px(64) - nsize) / 2), node, font=f, fill=(255, 255, 255, 255))
+            for i in range(cd.get('children', 3)):
+                a_ = clamp((t - cd['at'] - 0.5 - 0.12 * i) / 0.3)
+                if a_ <= 0: continue
+                cx = rx - int(cw * 0.11) + i * px(150); cy = oy + px(170)
+                d.line([rx + nw / 2, ry + px(64), cx + px(60), cy], fill=(210, 205, 198, int(255 * a_)), width=3)
+                d.rounded_rectangle([cx, cy, cx + px(120), cy + px(70)], px(12), outline=(200, 196, 190, int(255 * a_)), width=3)
+                for j in range(2): d.rounded_rectangle([cx + px(18), cy + px(20 + j * 20), cx + px(100 - j * 30), cy + px(30 + j * 20)], 4, fill=(232, 229, 224, int(255 * a_)))
         if ex < 1: scaled_layer(Cd, lerp(0.86, 1, k) * (1 - 0.1 * ex), x + cw / 2, int(0.34 * H) + chh / 2 + lerp(px(40), 0, k) - px(60) * ex, clamp(k * 1.5) * (1 - ex), c)
     cp = P.get('capsule')
     if cp and ex < 1:

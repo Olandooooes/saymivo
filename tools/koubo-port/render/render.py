@@ -14,7 +14,7 @@ import sys, os, re, json, time, argparse, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 from templates import OVERLAYS, PAGE_LAYERS, PAGE_BG
-from person import Person, detect_face_anchor, text_column, SHOTS
+from person import Person, detect_face_anchor, text_column, SHOTS, fill_sharpness
 
 REF = re.compile(r'^@p(\d+)(?:\.(e)|#(\d+)|~(.+?))?([+-][\d.]+)?$')
 TIME_KEYS = {'at', 'start', 'end', 'exit_at', 'out_at', 'slots_at', 'thumb_at', 'select_at', 'highlight_at', 'pop_at'}
@@ -50,16 +50,21 @@ def draw_sub(c, t, PH):
     if cur:
         L = sub_layer(cur[-1]['text']); alpha_comp(c, L, W // 2 - L.size[0] // 2, int(S['center_y'] * H - L.size[1] / 2))
 
-def chapter_bar(chaps, total):
+def chapter_bar(chaps, total, t):
+    """Chapter names appear when that chapter starts, and stay on the bar after that.
+    A later chapter is not painted early, so its sentence is not already on screen."""
     B = STYLE['chapter_bar']
+    shown = tuple(i for i, ch in enumerate(chaps) if ch.get('at', 0) <= t + 1e-6 and (ch.get('title') or '').strip())
     def mk():
         L = Image.new('RGBA', (W, B['height']), tuple(B['bg_rgba'])); d = ImageDraw.Draw(L)
         bounds = [ch['at'] for ch in chaps] + [total]
         for i, ch in enumerate(chaps):
             x0, x1 = int(ch['at'] / total * W), int(bounds[i + 1] / total * W)
             if i > 0: d.rectangle([x0 - 1, 9, x0 + 1, B['height'] - 9], fill=tuple(B['divider_rgba']))
+            title = ch['title'] if i in shown else ''
+            if not title:
+                continue
             size = B['font_px']
-            title = ch['title']
             f = font(size, B['weight'])
             span = max(48, (x1 - x0) - 28)
             while size > 14 and f.getlength(title) > span:
@@ -68,7 +73,7 @@ def chapter_bar(chaps, total):
             w = f.getlength(title); xc = (x0 + x1) / 2 if i > 0 else x0 + 16 + w / 2
             d.text((xc - w / 2, (B['height'] - size) // 2 - 3), title, font=f, fill=(255, 255, 255, 240))
         return L
-    return cached(('bar', total), mk)
+    return cached(('bar', total, shown), mk)
 
 # ------------------------------------------------------------------ frame
 class Renderer:
@@ -106,7 +111,7 @@ class Renderer:
         draw_sub(c, t, self.PH)
         B = STYLE['chapter_bar']
         if B['enabled'] and self.S.get('chapters'):
-            alpha_comp(c, chapter_bar(self.S['chapters'], self.total), 0, H - B['height'])
+            alpha_comp(c, chapter_bar(self.S['chapters'], self.total, t), 0, H - B['height'])
             c[H - B['progress_px']:, :max(2, int(t / self.total * W))] = np.array(B['progress_rgb']) / 255
         q = clamp((t - (self.total - STYLE['motion']['end_fade'] - 0.05)) / STYLE['motion']['end_fade'])
         if self.S.get('end_fade', True) and q > 0: c = c * (1 - q)
@@ -154,7 +159,7 @@ def main():
         if a.audio: cmd += ['-ss', str(t0), '-t', str(t1 - t0), '-i', a.audio, '-map', '0:v', '-map', '1:a', '-c:a', 'aac', '-b:a', '256k', '-shortest']
         wr = subprocess.Popen(cmd + ['-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', a.out], stdin=subprocess.PIPE)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    n = 0; tt = time.time(); stem = os.path.splitext(a.out)[0]
+    n = 0; tt = time.time(); stem = os.path.splitext(a.out)[0]; fill_checked = False
     while True:
         t = t0 + n / FPS
         if t >= t1: break
@@ -166,6 +171,14 @@ def main():
             if len(b) < sw * sh * 3: break
             src = np.frombuffer(b, np.uint8).reshape(sh, sw, 3).astype(np.float32) / 255
         else: src = demo_frame(t)
+        if not fill_checked:
+            scale, face_x, face_y, kp = R.person.pose(t)[:4]
+            if kp < 0.2:
+                ratio = fill_sharpness(R.person.place(src, scale, face_x, face_y), R.person.frame_bounds(scale, face_x, face_y))
+                fill_checked = True
+                print('fill sharpness', None if ratio is None else round(ratio, 3))
+                if ratio is not None and ratio < 0.45:
+                    raise SystemExit('填边比原画面糊太多: %.3f' % ratio)
         fr = R.frame(t, src)
         for s in stills:
             if abs(s - t) < 0.5 / FPS: Image.fromarray(fr).save(f'{stem}_still_{s:.2f}.jpg', quality=90)

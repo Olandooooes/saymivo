@@ -147,10 +147,8 @@
   "matting": false,
   "background": "original",
   "fill_when_zoomed_out": {
-   "method": "reflect_extend_then_blur",
-   "blur_sigma": 22,
-   "darken": 0.08,
-   "feather_px": 70
+   "method": "reflect_extend",
+   "seam_px": 12
   },
   "zoom_reference": "1.0 = source scaled to cover the canvas",
   "shots": {
@@ -246,7 +244,7 @@
    ]
   },
   "max_bottom_gap": 0.04,
-  "placement_note": "pulled-back shots aim the face at face_y*H but never lift the frame more than max_bottom_gap*H off the bottom edge (0.04 = hidden under the chapter bar; the gap is filled by replicating the bottom row, which smears if visible); PUSH keeps the face where the cover framing has it"
+  "placement_note": "pulled-back shots aim the face at face_y*H but never lift the frame more than max_bottom_gap*H off the bottom edge (0.04 = hidden under the chapter bar; that strip repeats the last row). Side and top gaps are a sharp mirror of the original frame. PUSH keeps the face where the cover framing has it"
  },
  "motion": {
   "ease_out": "1-(1-t)^4  (~cubic-bezier(.25,1,.5,1))",

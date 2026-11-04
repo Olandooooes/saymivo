@@ -1,9 +1,10 @@
 """Person compositor - NO matting, NO background replacement (user fix #3).
 
 The original frame is placed on the 16:9 canvas by a similarity transform (scale + face position).
-When the person is pulled back (zoom < 1) the uncovered canvas is filled by reflect-extending the
-ORIGINAL frame and blurring it lightly (sigma 22, -8 %), cross-faded over a 70 px feather, so it reads
-as the same room, slightly out of focus. Shots are keyframes; every change is a smooth eased zoom.
+When the person is pulled back (zoom < 1) the uncovered canvas is filled by mirroring the
+ORIGINAL frame outward. The extension stays sharp. A short ramp only hides the seam, and the
+strip below the frame is replicated so a mirrored torso does not appear. Shots are keyframes;
+every change is a smooth eased zoom.
 """
 from common import *
 PS = STYLE['person']; SHOTS = PS['shots']; FILL = PS['fill_when_zoomed_out']
@@ -81,24 +82,36 @@ class Person:
         return s, fx, fy, kp, cx, cy, d
 
     def place(self, src, s, fx, fy):
-        """src float HxWx3 -> canvas with blurred reflect-extension where the frame does not cover"""
-        M = np.float32([[s, 0, fx - self.face[0] * s], [0, s, fy - self.face[1] * s]])
-        ext = cv2.warpAffine(src, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
-        x0, y0 = M[0, 2], M[1, 2]; x1, y1 = x0 + self.sw * s, y0 + self.sh * s
-        if x0 <= 0 and y0 <= 0 and x1 >= W and y1 >= H: return ext                    # frame covers canvas
-        if y1 < H:      # below the frame the torso continues: replicate (a mirrored torso reads as a glitch)
-            yb = max(0, int(y1) - 2)
-            ext[yb:] = cv2.warpAffine(src, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)[yb:]
-        sm = cv2.resize(ext, (W // 4, H // 4), interpolation=cv2.INTER_AREA)
-        bl = cv2.resize(cv2.GaussianBlur(sm, (0, 0), FILL['blur_sigma'] / 4), (W, H)) * (1 - FILL['darken'])
-        # feather: distance (px) from the uncovered region, ramped over feather_px inside the frame
-        xx = np.arange(W, dtype=np.float32); yy = np.arange(H, dtype=np.float32)
-        fe = FILL['feather_px']
-        big = np.float32(1e9)
-        dx = np.minimum(xx - x0 if x0 > 0 else big, x1 - xx if x1 < W else big) * np.ones(W, np.float32)
-        dy = np.minimum(yy - y0 if y0 > 0 else big, y1 - yy if y1 < H else big) * np.ones(H, np.float32)
-        m = np.clip(np.minimum(dy[:, None], dx[None, :]) / fe, 0, 1); m = (m * m * (3 - 2 * m))[..., None]
-        return ext * m + bl * (1 - m)
+        """src float HxWx3 -> canvas. Uncovered edges are a sharp mirror of the original frame."""
+        matrix = np.float32([[s, 0, fx - self.face[0] * s], [0, s, fy - self.face[1] * s]])
+        reflected = cv2.warpAffine(src, matrix, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+        x0, y0 = float(matrix[0, 2]), float(matrix[1, 2])
+        x1, y1 = x0 + self.sw * s, y0 + self.sh * s
+        if x0 <= 0 and y0 <= 0 and x1 >= W and y1 >= H:
+            return reflected
+        canvas = reflected
+        seam = max(0, int(FILL.get('seam_px', 12)))
+        if y1 < H - 0.5:
+            # Below the frame, repeat the last rows. Mirroring the body reads as a second person.
+            replicated = cv2.warpAffine(src, matrix, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+            y_edge = int(np.clip(round(y1), 0, H))
+            canvas = reflected.copy()
+            if seam <= 0:
+                canvas[y_edge:] = replicated[y_edge:]
+            else:
+                top = max(0, y_edge - seam)
+                bot = min(H, y_edge + seam)
+                if bot < H:
+                    canvas[bot:] = replicated[bot:]
+                if bot > top:
+                    ramp = np.linspace(0.0, 1.0, bot - top, dtype=np.float32)[:, None, None]
+                    canvas[top:bot] = reflected[top:bot] * (1.0 - ramp) + replicated[top:bot] * ramp
+        return canvas
+
+    def frame_bounds(self, s, fx, fy):
+        x0 = fx - self.face[0] * s
+        y0 = fy - self.face[1] * s
+        return (x0, y0, x0 + self.sw * s, y0 + self.sh * s)
 
     def composite(self, t, src, page_fn, overlay_fn):
         """returns (frame, kp, pose). page_fn(t)->page frame, overlay_fn(c, t)"""
@@ -117,6 +130,49 @@ class Person:
         c = page * (1 - m) + pw * m
         if kp < 0.999: overlay_fn(c, t)
         return c, kp, p
+
+def _gray_u8(image):
+    arr = np.clip(image, 0, 1) if image.dtype != np.uint8 else image
+    if arr.dtype != np.uint8:
+        arr = (arr * 255.0).astype(np.uint8)
+    if arr.ndim == 3:
+        arr = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    return arr
+
+
+def laplacian_var(image, mask):
+    vals = cv2.Laplacian(_gray_u8(image), cv2.CV_64F)[mask]
+    if vals.size < 40:
+        return None
+    return float(vals.var())
+
+
+def fill_sharpness(placed, bounds, seam_px=None):
+    """Laplacian variance of the filled margin divided by the frame's own edge.
+    A blurred extension falls well below 1. None when the frame already covers the canvas."""
+    seam = float(12 if seam_px is None else seam_px)
+    band = seam + 48.0
+    h, w = placed.shape[:2]
+    x0, y0, x1, y1 = bounds
+    yy, xx = np.ogrid[:h, :w]
+    dist = np.minimum(np.minimum(xx - x0, x1 - xx), np.minimum(yy - y0, y1 - yy))
+    reference = (dist >= seam) & (dist < band)
+    filled = dist < -seam
+    if int(reference.sum()) < 80 or int(filled.sum()) < 80:
+        return None
+    src_v = laplacian_var(placed, reference)
+    fill_v = laplacian_var(placed, filled)
+    if not src_v:
+        return None
+    return fill_v / src_v
+
+
+def fill_is_sharp(placed, bounds, min_ratio=0.45, seam_px=None):
+    ratio = fill_sharpness(placed, bounds, seam_px=seam_px)
+    if ratio is None:
+        return True
+    return ratio >= min_ratio
+
 
 def text_column(face_x_px):
     tc = PS['text_column']; f = face_x_px / W

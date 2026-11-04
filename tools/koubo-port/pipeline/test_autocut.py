@@ -57,7 +57,9 @@ def test_opening_shots():
         {'text': '它到底难在哪里？', 's': 2.8, 'e': 5.2, 'tokens': []},
         {'text': '从旧办法到新办法', 's': 5.6, 'e': 8.4, 'tokens': []},
         {'text': '关键的一句就在这里', 's': 8.8, 'e': 11.0, 'tokens': []},
-        {'text': '举一个具体的例子说明', 's': 11.4, 'e': 15.0, 'tokens': []},
+        {'text': '举一个具体的例子说明', 's': 11.4, 'e': 12.4, 'tokens': []},
+        {'text': '差在这一步', 's': 12.5, 'e': 13.3, 'tokens': []},
+        {'text': '你就这么说', 's': 13.4, 'e': 14.5, 'tokens': []},
         {'text': '后面还有一段要说完', 's': 16.0, 'e': 20.0, 'tokens': []},
         {'text': '结尾把这句话留下', 's': 36.0, 'e': 39.0, 'tokens': []},
     ]
@@ -75,15 +77,26 @@ def test_opening_shots():
     for row in scenes['overlays']:
         if row['start'] < 20:
             assert row['end'] - row['start'] <= 3.25, row
-    page = next(row for row in scenes['pages'] if row['start'] < 20)
-    assert page['layers'][0]['template'] == 'page_example', page
-    assert page['layers'][0]['capsule']['text']
+    page = next(row for row in scenes['pages'] if row['start'] < 20 and row.get('bg') != 'dark_end')
+    layer = page['layers'][0]
+    assert layer['template'] == 'page_example', page
+    shown = [layer['title'][0]['text'], layer['card']['big'], layer['capsule']['text']]
+    assert len(shown) == len(set(shown)), shown
+    assert 'node' not in layer['card']
     assert page['end'] - page['start'] <= 3.25, page
     title = next(row for row in scenes['overlays'] if row['template'] == 'title_card')
     assert title['title']['text'] == phrases[0]['text']
     assert title['glass']['text'] == phrases[1]['text']
     assert len(phrases[0]['text']) > 8
-    assert scenes['chapters'][0]['title'] == phrases[0]['text']
+    assert scenes['chapters'][0]['title'] == ''
+    named = [row for row in scenes['chapters'] if row['title'] == phrases[0]['text']]
+    assert named and named[0]['at'] > phrases[0]['e']
+    assert draft.duplicate_frames(scenes, phrases) == []
+    panel = next(row for row in scenes['overlays'] if row['template'] == 'side_panel' and row['start'] < 20)
+    panel_texts = [item['text'] for item in panel['items']]
+    if panel.get('accent'):
+        panel_texts.append(panel['accent']['text'])
+    assert len(panel_texts) == len(set(panel_texts)), panel_texts
     spoken = [row['text'] for row in phrases]
     def acceptable(text):
         if text in spoken:
@@ -160,6 +173,64 @@ def test_phrase_display_uses_lexicon():
     print('phrase-display-ok', out[0]['text'])
 
 
+def test_duplicate_frames_flags_a_repeat():
+    spec = importlib.util.spec_from_file_location('draft_dup', os.path.join(os.path.dirname(__file__), '07_draft_scenes.py'))
+    draft = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(draft)
+    scenes = {
+        'duration': 2,
+        'chapters': [{'title': '', 'at': 0}],
+        'shots': [{'at': 0, 'shot': 'WIDE_L'}],
+        'overlays': [{
+            'template': 'side_panel',
+            'start': 0.1,
+            'end': 1.8,
+            'items': [{'text': '同一句', 'at': 0.2, 'style': 'h1'}],
+            'accent': {'text': '同一句', 'at': 0.4},
+        }],
+        'pages': [],
+    }
+    phrases = [{'text': '同一句', 's': 0.1, 'e': 1.6, 'tokens': []}]
+    bad = draft.duplicate_frames(scenes, phrases)
+    assert bad and any('同一句' in row[1] for row in bad), bad
+    scenes['overlays'][0]['accent']['text'] = '另外一句'
+    assert draft.duplicate_frames(scenes, phrases) == []
+    scenes['chapters'].append({'title': '另外一句', 'at': 0.5})
+    bad = draft.duplicate_frames(scenes, phrases)
+    assert bad and any('另外一句' in row[1] for row in bad), bad
+    print('duplicate-ok', len(bad))
+
+
+def test_fill_stays_sharp():
+    render = os.path.join(os.path.dirname(__file__), '..', 'render')
+    if render not in sys.path:
+        sys.path.insert(0, render)
+    import person
+    src = np.zeros((720, 1280, 3), np.float32)
+    stripe = ((np.arange(1280) // 10) % 2).astype(np.float32)
+    tone = np.array([0.86, 0.84, 0.80], np.float32)
+    src[:] = tone * (0.55 + 0.45 * stripe)[None, :, None]
+    who = person.Person(1280, 720, (0.49, 0.62), [{'at': 0, 'shot': 'WIDE_R'}])
+    scale, face_x, face_y = who.shot_pose('WIDE_R')[:3]
+    placed = who.place(src, scale, face_x, face_y)
+    bounds = who.frame_bounds(scale, face_x, face_y)
+    ratio = person.fill_sharpness(placed, bounds)
+    assert ratio is not None and ratio >= 0.45, ratio
+    assert person.fill_is_sharp(placed, bounds)
+    x0, y0, x1, y1 = bounds
+    height, width = placed.shape[:2]
+    yy, xx = np.ogrid[:height, :width]
+    dist = np.minimum(np.minimum(xx - x0, x1 - xx), np.minimum(yy - y0, y1 - yy))
+    mask = dist < -12
+    heavy = person.cv2.GaussianBlur(placed, (0, 0), 22)
+    blurred = placed.copy()
+    blurred[mask] = heavy[mask]
+    bad = person.fill_sharpness(blurred, bounds)
+    assert bad is not None and bad < 0.45, bad
+    assert not person.fill_is_sharp(blurred, bounds)
+    print('fill-ok', round(ratio, 3), round(bad, 3))
+
+
 def test_shot_zoom_stays_locked():
     style = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'config', 'style.json')))
     shots = style['person']['shots']
@@ -169,6 +240,9 @@ def test_shot_zoom_stays_locked():
     assert style['canvas']['window'] is None
     assert style['canvas']['wallpaper'] is None
     assert style['person']['matting'] is False
+    fill = style['person']['fill_when_zoomed_out']
+    assert fill['method'] == 'reflect_extend'
+    assert 'blur_sigma' not in fill
     print('zoom-ok', shots['WIDE_L']['zoom'], shots['PUSH']['zoom'])
 
 
@@ -178,4 +252,6 @@ if __name__ == '__main__':
     test_hangover_bridges_a_short_vocalization()
     test_display_replacement_keeps_longer_latin()
     test_phrase_display_uses_lexicon()
+    test_duplicate_frames_flags_a_repeat()
+    test_fill_stays_sharp()
     test_shot_zoom_stays_locked()
