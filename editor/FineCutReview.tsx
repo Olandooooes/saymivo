@@ -2,7 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import type {Caption} from '../src/captions';
 import type {Clip} from '../src/timeline';
 
-type Remove = {id: string; kind: string; startMs: number; endMs: number; reason: string; evidence?: string[]; status: string};
+type Remove = {id: string; kind: string; startMs: number; endMs: number; reason: string; evidence?: string[]; status: string; confidence?: string; portId?: number; gapIndex?: number};
 type Plan = {words: {corrections: {id: string; before: string; after: string; status: string; reason: string}[]}; cutlist: {removes: Remove[]; audioOffsetMs: number}};
 
 const label: Record<string, string> = {pause: '气口', retake: '重说', 'false-start': '起句失败'};
@@ -53,13 +53,13 @@ export function FineCutReview({clip, captions, onClose, onApply, onPause}: {clip
   };
   return <dialog ref={dialog} onCancel={onClose} aria-labelledby="fine-cut-title" className="rounded-xl bg-surface text-on-surface p-5 w-[min(880px,96vw)] max-h-[86vh] overflow-auto backdrop:bg-black/60">
     <div className="flex justify-between"><h2 id="fine-cut-title" className="font-bold text-lg">精剪审阅</h2><button type="button" onClick={onClose}>关闭</button></div>
-    <p className="my-2 text-sm">只收明显拖长的气口：句中长于约 1.05 秒的收到约 0.55 秒，句末标点后长于约 0.85 秒的收到约 0.42 秒。更短的气口和语气词留着。气口和重说默认待定，起句失败标成待复核，都要接受后才进入成片。试听范围是剪点前后各 1 秒。时间线要等你按生成才会改，并且可以一次撤销。</p>
+    <p className="my-2 text-sm">粗剪会去掉单独的语气词、起句失败，以及 14 秒内重说的前一遍（保留最后一遍）。长停顿按档压缩：超过 3 秒收到 0.75 秒，0.9 到 3 秒收到 0.60 秒，0.6 到 0.9 秒收到 0.45 秒，更短的气口不动。词尾至少留 0.22 秒，下一次起音前留 0.12 秒。这些都先列出来，接受后才进入时间线。超过 12 秒的删除标成待复核。试听范围是剪点前后各 1 秒。</p>
     <audio ref={audio} src={'/' + clip.src} preload="none" />
     {busy && <p role="status">{busy}</p>}
     {error && <p role="alert">{error}</p>}
     {plan && <>
       <p className="text-sm">术语候选 {plan.words.corrections.length} 条，仍待定，不会改词时间。</p>
-      <div className="flex gap-3 my-3"><button type="button" onClick={acceptPauses}>接受全部气口</button><button type="button" onClick={() => setPlan(current => current && ({...current, cutlist: {...current.cutlist, removes: current.cutlist.removes.map(row => ({...row, status: row.kind === 'false-start' ? 'pending' : 'proposed'}))}}))}>全部改回未决定</button></div>
+      <div className="flex gap-3 my-3"><button type="button" onClick={acceptPauses}>接受全部气口</button><button type="button" onClick={() => setPlan(current => current && ({...current, cutlist: {...current.cutlist, removes: current.cutlist.removes.map(row => row.kind === 'pause' || row.kind === 'filler' || row.kind === 'false-start' || row.kind === 'retake' ? {...row, status: 'accepted'} : row)}}))}>接受这版粗剪</button><button type="button" onClick={() => setPlan(current => current && ({...current, cutlist: {...current.cutlist, removes: current.cutlist.removes.map(row => ({...row, status: row.confidence === 'review' ? 'pending' : 'proposed'}))}}))}>全部改回未决定</button></div>
       {plan.cutlist.removes.map(row => <article key={row.id} className="border border-outline-variant rounded p-3 my-2">
         <p>{label[row.kind] ?? row.kind} · {(row.startMs / 1000).toFixed(2)}–{(row.endMs / 1000).toFixed(2)} 秒 · {row.status === 'accepted' ? '已接受' : row.status === 'rejected' ? '已拒绝' : row.status === 'pending' ? '待复核' : '待定'}</p>
         <p className="text-sm">{row.reason}</p>

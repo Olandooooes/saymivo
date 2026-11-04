@@ -4,6 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {projectCaptions} from '../src/fine-cut.mjs';
 import {planFromClock, renderFineCut} from '../scripts/render-fine-cut.mjs';
 import {transcriptCacheFile, transcribeClip} from '../scripts/lib-transcribe.mjs';
+import {planMedia, portRoot, refreshRegions, renderAudio, rerunCut, toReviewCutlist, wordsFromChars, cutVideo} from '../scripts/rough-cut.mjs';
 
 const python = root => (fs.existsSync(path.join(root, '.venv/bin/python')) ? path.join(root, '.venv/bin/python') : 'python3');
 
@@ -13,6 +14,12 @@ function mediaFile(PUBLIC, src) {
   const media = fs.realpathSync(path.join(PUBLIC, src));
   if (!media.startsWith(root + path.sep)) throw Error('原片不在素材库中');
   return media;
+}
+
+function streamDuration(file, selector) {
+  const probe = spawnSync('ffprobe', ['-v', 'error', '-select_streams', selector, '-show_entries', 'stream=duration', '-of', 'csv=p=0', file], {encoding: 'utf8'});
+  const value = Number(String(probe.stdout || '').trim().split('\n')[0]);
+  return Number.isFinite(value) ? value : null;
 }
 
 function clockFor(ROOT, PUBLIC, src) {
@@ -43,29 +50,76 @@ export async function fineCutRoute({req, res, url, ROOT, PUBLIC, json, body}) {
     const clip = input.clip;
     if (!clip?.id || !Number.isFinite(clip.inSec) || !Number.isFinite(clip.outSec) || clip.outSec <= clip.inSec) throw Error('片段范围无效');
     clock = clockFor(ROOT, PUBLIC, clip.src);
-    const words = sourceWords(clip, input.words);
-    if (!words.length) throw Error('还没有词时间。请先识别字幕，或传入模型给出的 words。');
-    const planned = planFromClock({
-      wav: clock.wav, receipt: clock.receipt, words,
-      clip: {id: clip.id, src: clip.src, inSec: clip.inSec, outSec: Math.min(clip.outSec, clock.receipt.durationSec)},
-      glossary: input.glossary ?? '',
-    });
+    const span = Math.min(clip.outSec, clock.receipt.durationSec) - clip.inSec;
+    if (!(span > 0.5)) throw Error('片段范围无效');
+    if (clip.inSec > 0.05) throw Error('粗剪按整段原片的视频时间计算，请从片头开始');
+    const portKey = clock.receipt.sourceSha256 || clip.id;
+    const workdir = path.join(ROOT, '.captions-tmp', 'koubo-port', String(portKey).slice(0, 16));
+    fs.mkdirSync(workdir, {recursive: true});
+    const plannedPort = fs.existsSync(path.join(workdir, 'chars.json')) && fs.existsSync(path.join(workdir, 'energy_db.npy'))
+      ? null
+      : planMedia(clock.media, workdir);
+    const chars = plannedPort?.chars ?? JSON.parse(fs.readFileSync(path.join(workdir, 'chars.json'), 'utf8'));
+    if (!plannedPort) {
+      // Regions follow cut_rules.json and are cheap. A cached transcript must not keep an older VAD.
+      refreshRegions(workdir);
+      rerunCut(workdir, {removes: []});
+    }
+    const portCut = JSON.parse(fs.readFileSync(path.join(workdir, 'cutlist.json'), 'utf8'));
+    const words = wordsFromChars(chars, clock.receipt.sourceSha256);
+    const cutlist = toReviewCutlist(portCut, {sourceSha256: clock.receipt.sourceSha256, portKey});
     if (url.pathname.endsWith('/plan')) {
-      json(res, 200, {words: planned.words, cutlist: planned.cutlist, durationSec: planned.durationSec});
+      json(res, 200, {words, cutlist, durationSec: clock.receipt.durationSec, engine: 'koubo-port', portRoot});
       return true;
     }
-    const cutlist = input.cutlist ?? planned.cutlist;
-    if (!Array.isArray(cutlist.removes)) throw Error('剪辑单无效');
+    const reviewed = input.cutlist ?? cutlist;
+    if (!Array.isArray(reviewed.removes)) throw Error('剪辑单无效');
+    if (reviewed.engine === 'koubo-port') {
+      rerunCut(workdir, reviewed);
+      renderAudio(workdir);
+      cutVideo(clock.media, workdir);
+    }
     const id = `${clip.id}-fine`.replace(/[^\w.-]/g, '').slice(0, 48);
     const filename = `${id}.mp4`;
     const output = path.join(PUBLIC, 'clips', filename);
     if (fs.existsSync(output)) throw Error('精剪文件已存在，请换一段素材或先移走旧文件');
-    const rendered = renderFineCut({
-      source: clock.media, cutlist, clip: {id: clip.id, src: clip.src, inSec: clip.inSec, outSec: Math.min(clip.outSec, clock.receipt.durationSec)},
-      output, fps: cutlist.fps ?? 30,
-    });
-    fs.writeFileSync(path.join(PUBLIC, 'clips', `${id}.words.json`), JSON.stringify(planned.words, null, 2));
-    fs.writeFileSync(path.join(PUBLIC, 'clips', `${id}.cutlist.json`), JSON.stringify(cutlist, null, 2));
+    let rendered;
+    if (reviewed.engine === 'koubo-port') {
+      const video = path.join(workdir, 'cut_video.mp4');
+      const audio = path.join(workdir, 'cut_audio.wav');
+      const mux = spawnSync('ffmpeg', ['-y', '-i', video, '-i', audio, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', output], {encoding: 'utf8'});
+      if (mux.status !== 0) throw Error((mux.stderr || '粗剪合成失败').slice(-400));
+      const probed = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', output], {encoding: 'utf8'}).stdout || '{}');
+      const videoDurationSec = streamDuration(output, 'v:0');
+      const audioDurationSec = streamDuration(output, 'a:0');
+      const durationDeltaSec = videoDurationSec != null && audioDurationSec != null ? audioDurationSec - videoDurationSec : null;
+      rendered = {
+        durationSec: Number(probed.format?.duration) || 0,
+        expectedSec: Number(probed.format?.duration) || 0,
+        loudness: null,
+        sync: {
+          withinOneFrame: durationDeltaSec != null && Math.abs(durationDeltaSec) <= 1 / 30 + 1e-3,
+          videoDurationSec,
+          audioDurationSec,
+          durationDeltaSec,
+        },
+        keeps: JSON.parse(fs.readFileSync(path.join(workdir, 'cutlist.json'), 'utf8')).keep,
+      };
+    } else {
+      const legacyWords = sourceWords(clip, input.words);
+      const planned = planFromClock({
+        wav: clock.wav, receipt: clock.receipt, words: legacyWords,
+        clip: {id: clip.id, src: clip.src, inSec: clip.inSec, outSec: Math.min(clip.outSec, clock.receipt.durationSec)},
+        glossary: input.glossary ?? '',
+      });
+      rendered = renderFineCut({
+        source: clock.media, cutlist: reviewed, clip: {id: clip.id, src: clip.src, inSec: clip.inSec, outSec: Math.min(clip.outSec, clock.receipt.durationSec)},
+        output, fps: reviewed.fps ?? 30,
+      });
+      fs.writeFileSync(path.join(PUBLIC, 'clips', `${id}.words.json`), JSON.stringify(planned.words, null, 2));
+    }
+    fs.writeFileSync(path.join(PUBLIC, 'clips', `${id}.words.json`), JSON.stringify(words, null, 2));
+    fs.writeFileSync(path.join(PUBLIC, 'clips', `${id}.cutlist.json`), JSON.stringify(reviewed, null, 2));
     const keeps = rendered.keeps;
     const captions = projectCaptions((input.captions ?? []).filter(caption => caption.clipId === clip.id), keeps)
       .map(caption => ({...caption, clipId: id}));

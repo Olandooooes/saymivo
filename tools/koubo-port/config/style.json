@@ -1,0 +1,320 @@
+{
+ "_doc": "Visual spec after the user's 3 fixes (full-frame 16:9, no wallpaper/window, no background replacement, pulled-back person). Sizes are px at 1080p unless marked as fractions (0-1) of W/H.",
+ "canvas": {
+  "w": 1920,
+  "h": 1080,
+  "fps": 30,
+  "frame": "full_bleed_16x9",
+  "window": null,
+  "wallpaper": null
+ },
+ "colors": {
+  "orange": [
+   224,
+   112,
+   50
+  ],
+  "yellow": [
+   255,
+   231,
+   0
+  ],
+  "stroke": [
+   24,
+   22,
+   30
+  ],
+  "red": [
+   214,
+   56,
+   48
+  ],
+  "green": [
+   46,
+   160,
+   90
+  ],
+  "highlighter": [
+   160,
+   232,
+   120
+  ],
+  "ink": [
+   26,
+   26,
+   30
+  ],
+  "muted": [
+   150,
+   146,
+   140
+  ],
+  "page_offwhite": [
+   247,
+   246,
+   242
+  ],
+  "page_grey": [
+   228,
+   228,
+   226
+  ],
+  "page_dark": [
+   10,
+   12,
+   26
+  ],
+  "glow_orange": [
+   255,
+   110,
+   30
+  ],
+  "glow_blue": [
+   60,
+   90,
+   200
+  ],
+  "glow_violet": [
+   120,
+   60,
+   160
+  ],
+  "pill_dark": [
+   26,
+   28,
+   34,
+   235
+  ],
+  "pill_outline_fill": [
+   10,
+   10,
+   14,
+   120
+  ],
+  "capsule_fill": [
+   46,
+   46,
+   50,
+   215
+  ]
+ },
+ "fonts": {
+  "sans": "NotoSansSC (variable: Medium/Bold/Black)",
+  "serif": "NotoSerifSC Black (capsules)",
+  "note": "reference uses a heavier display face; swap here if licensed"
+ },
+ "subtitle": {
+  "font_px": 46,
+  "weight": "Medium",
+  "box_rgba": [
+   38,
+   38,
+   42,
+   168
+  ],
+  "radius": 10,
+  "pad_x": 17,
+  "pad_y": 10,
+  "center_y": 0.905,
+  "lead": 0.06,
+  "hold_after": 0.25
+ },
+ "chapter_bar": {
+  "enabled": true,
+  "height": 46,
+  "bg_rgba": [
+   0,
+   0,
+   0,
+   200
+  ],
+  "font_px": 24,
+  "weight": "Bold",
+  "divider_rgba": [
+   255,
+   255,
+   255,
+   235
+  ],
+  "progress_px": 4,
+  "progress_rgb": [
+   238,
+   110,
+   40
+  ]
+ },
+ "person": {
+  "matting": false,
+  "background": "original",
+  "fill_when_zoomed_out": {
+   "method": "reflect_extend_then_blur",
+   "blur_sigma": 22,
+   "darken": 0.08,
+   "feather_px": 70
+  },
+  "zoom_reference": "1.0 = source scaled to cover the canvas",
+  "shots": {
+   "WIDE_L": {
+    "zoom": 0.8,
+    "face_x": 0.3,
+    "use": "default; text on the right half",
+    "face_y": 0.5
+   },
+   "WIDE_R": {
+    "zoom": 0.8,
+    "face_x": 0.7,
+    "use": "default; text on the left half",
+    "face_y": 0.5
+   },
+   "WIDE_C": {
+    "zoom": 0.85,
+    "face_x": 0.5,
+    "use": "headline above/below the person",
+    "face_y": 0.5
+   },
+   "PUSH": {
+    "zoom": 1.08,
+    "face_x": 0.5,
+    "use": "key line only, <=2.5 s, then back to a WIDE shot"
+   },
+   "PIP": {
+    "circle_d": 0.2,
+    "center": [
+     0.87,
+     0.765
+    ],
+    "inner_zoom": 0.5,
+    "use": "text-heavy page",
+    "face_offset_y": 0.05
+   },
+   "END": {
+    "circle_d": 0.41,
+    "center": [
+     0.735,
+     0.47
+    ],
+    "inner_zoom": 0.95,
+    "use": "closing card",
+    "face_offset_y": 0.05
+   }
+  },
+  "zoom_limits": [
+   0.75,
+   1.1
+  ],
+  "shot_change": {
+   "dur": 0.7,
+   "easing": "ease_in_out_cubic"
+  },
+  "pip_morph": {
+   "dur": 0.6,
+   "easing": "ease_in_out_cubic",
+   "shadow_blur": 14,
+   "shadow_offset": 8,
+   "shadow_alpha": 0.35
+  },
+  "jump_cut_punch": {
+   "wide_delta": 0.04,
+   "pip_delta": 0.08,
+   "rule": "toggle at every join inside a shot; skip joins covered by a transition (+-0.3 s)"
+  },
+  "drift": {
+   "per_sec": 0.005,
+   "max": 0.02
+  },
+  "inner_zoom_note": "PIP/END inner_zoom is relative to cover scale; the face anchor is placed at the circle centre (+face_offset_y*d)",
+  "face_anchor": {
+   "method": "YuNet (cv2.FaceDetectorYN, model auto-downloaded to ~/.cache) -> Haar if cv2<5 -> fallback",
+   "fallback": [
+    0.49,
+    0.6
+   ],
+   "note": "source fractions, median over 9 frames"
+  },
+  "text_column": {
+   "face_left": [
+    0.52,
+    0.95
+   ],
+   "face_right": [
+    0.05,
+    0.48
+   ],
+   "centre": [
+    0.05,
+    0.95
+   ]
+  },
+  "max_bottom_gap": 0.04,
+  "placement_note": "pulled-back shots aim the face at face_y*H but never lift the frame more than max_bottom_gap*H off the bottom edge (0.04 = hidden under the chapter bar; the gap is filled by replicating the bottom row, which smears if visible); PUSH keeps the face where the cover framing has it"
+ },
+ "motion": {
+  "ease_out": "1-(1-t)^4  (~cubic-bezier(.25,1,.5,1))",
+  "ease_in_out": "cubic",
+  "back_overshoot": 2.2,
+  "pop": {
+   "dur": 0.32,
+   "from_scale": 0.3,
+   "opacity_in": 0.12,
+   "exit": 0.18,
+   "exit_shrink": 0.06
+  },
+  "fade_up": {
+   "dur": 0.4,
+   "dy_px": 33
+  },
+  "lead_before_word": [
+   0.03,
+   0.1
+  ],
+  "panel_slide": {
+   "dur": 0.5,
+   "from_dx_px": 236,
+   "from_scale": 0.9,
+   "exit": 0.22,
+   "exit_dx_px": 585
+  },
+  "page_slide": {
+   "dur": 0.5,
+   "easing": "ease_in_out_cubic"
+  },
+  "blur_slide": {
+   "in": 0.42,
+   "out": 0.25,
+   "max_kernel_px": 91,
+   "kernel_per_px_velocity": 1.4
+  },
+  "graphics_exit": [
+   0.1,
+   0.25
+  ],
+  "stagger": 0.1,
+  "highlighter_sweep": 0.45,
+  "carousel": {
+   "dur": 0.6,
+   "gap": 0.47,
+   "inactive_scale": 0.86,
+   "inactive_opacity": 0.55
+  },
+  "wobble": {
+   "deg": 6,
+   "freq": 16,
+   "decay": 2.5
+  },
+  "end_fade": 0.4,
+  "max_static_sec": 3.0
+ },
+ "type_scale_px": {
+  "title": 209,
+  "headline_yellow": 165,
+  "headline_yellow_small": 134,
+  "white_header": 106,
+  "page_title": 89,
+  "card_title": 70,
+  "pill": 56,
+  "capsule": 73,
+  "body": 42,
+  "kicker": 33,
+  "chip": 31
+ }
+}
