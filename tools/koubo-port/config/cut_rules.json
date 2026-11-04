@@ -1,0 +1,29 @@
+{
+  "_doc": "Cutting thresholds that produced the approved edit. Times in seconds. See 手剪经验与风格规范.md §1.",
+  "energy_vad": {"frame_ms": 20, "threshold_db": -34, "merge_gap": 0.25, "min_region": 0.12, "hangover_ms": 40},
+  "filler": {
+    "chars": ["嗯", "呃", "额", "啊", "唔", "哦", "诶", "欸"],
+    "max_region": 0.9,
+    "min_isolation_gap": 0.12,
+    "no_text_region_is_filler": true
+  },
+  "false_start": {"max_chars": 6, "max_gap_to_restart": 1.5, "min_overlap_ratio": 0.6, "restart_window": 4.0},
+  "retake": {"phrase_split_gap": 0.35, "min_chars": 4, "similarity": 0.68, "look_ahead": 14.0, "max_removed": 12.0},
+  "keep_policy": "last_complete_take",
+  "pause_tiers": [
+    {"min_gap": 3.0, "target": 0.75},
+    {"min_gap": 0.9, "target": 0.60},
+    {"min_gap": 0.6, "target": 0.45}
+  ],
+  "mid_sentence_stall_target": 0.30,
+  "compress_only_if_saves": 0.05,
+  "margins": {"tail_min": 0.22, "tail_ratio": 0.6, "head_min": 0.12, "removal_tail_min": 0.08, "removal_head_min": 0.05, "quiet_search": 0.12},
+  "head_lead_in": 0.30,
+  "tail_hold": 0.55,
+  "crossfade_ms": 30,
+  "crossfade_shape": "equal_power_sin_cos",
+  "fade_in_ms": 40,
+  "fade_out_ms": 300,
+  "frame_round": true,
+  "loudness": {"target_lufs": -16.0, "max_true_peak_dbtp": -1.0}
+}

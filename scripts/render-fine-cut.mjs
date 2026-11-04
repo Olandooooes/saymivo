@@ -33,7 +33,7 @@ export function readPcm16(file) {
 }
 
 export function silenceRanges(wav, durationSec, noiseDb = -42) {
-  const log = run(ffmpeg(), ['-hide_banner', '-i', wav, '-vn', '-af', `silencedetect=noise=${noiseDb}dB:d=0.40`, '-f', 'null', '-']).stderr;
+  const log = run(ffmpeg(), ['-hide_banner', '-i', wav, '-vn', '-af', `silencedetect=noise=${noiseDb}dB:d=0.85`, '-f', 'null', '-']).stderr;
   const gaps = [];
   let start = null;
   for (const line of log.split('\n')) {
@@ -51,7 +51,7 @@ export function planFromClock({wav, receipt, words, clip, fps = 30, glossary = '
   const durationSec = samples.length / 16000;
   const bounded = {...clip, inSec: clip.inSec ?? 0, outSec: clip.outSec ?? durationSec, sourceDurationSec: clip.sourceDurationSec ?? durationSec};
   let fromVad = [];
-  const vad = spawnSync(python(), ['scripts/detect-speech-pauses.py', '--clocked-wav', wav, '--min-silence-ms', '400'], {encoding: 'utf8', maxBuffer: 4 * 1024 * 1024});
+  const vad = spawnSync(python(), ['scripts/detect-speech-pauses.py', '--clocked-wav', wav, '--min-silence-ms', '850'], {encoding: 'utf8', maxBuffer: 4 * 1024 * 1024});
   if (vad.status === 0) { try { fromVad = speechPauseGaps(JSON.parse(vad.stdout)); } catch { /* VAD is optional */ } }
   const silences = mergeIntervals([adaptiveSilenceRanges(samples, 16000), fromVad, silenceRanges(wav, durationSec)]);
   const document = buildWordsDocument({
@@ -95,6 +95,19 @@ export function frameSegments(keeps, fps = 30, rate = null) {
 }
 
 export const PORTRAIT_ENHANCE = 'hqdn3d=1.5:1.5:6:6,unsharp=5:5:0.6';
+// Equal-power join. The overlap is borrowed from the removed gap, so the
+// kept word tail is not faded and the soundtrack stays the same length as the picture.
+export const JOIN_CROSSFADE_SEC = 0.032;
+
+function audioJoinFade(segments, index) {
+  if (index <= 0 || index >= segments.length) return 0;
+  const left = segments[index - 1];
+  const right = segments[index];
+  const gap = right.startSec - left.endSec;
+  if (gap + 1e-4 < JOIN_CROSSFADE_SEC) return 0;
+  if (left.durationSec < JOIN_CROSSFADE_SEC * 2 || right.durationSec < JOIN_CROSSFADE_SEC * 2) return 0;
+  return JOIN_CROSSFADE_SEC;
+}
 
 export function filterGraph(keeps, fps, rate = null, {enhance = false} = {}) {
   // Audio PTS already include the container delay. Subtracting audioOffsetMs
@@ -102,17 +115,36 @@ export function filterGraph(keeps, fps, rate = null, {enhance = false} = {}) {
   // Video and audio of one piece share the same integer frame span.
   // Optional denoise/sharpen stays on the video chain so the audio clock is unchanged.
   const segments = frameSegments(keeps, fps, rate);
+  if (!segments.length) return '[0:v]null[v];[0:a]anull[a]';
   const look = enhance ? `,${PORTRAIT_ENHANCE}` : '';
   const parts = segments.map((segment, index) => {
-    const span = segment.durationSec.toFixed(6);
-    const open = segment.startSec.toFixed(6);
-    const close = segment.endSec.toFixed(6);
-    const fade = segment.durationSec > 0.05 ? `,afade=t=in:st=0:d=0.012,afade=t=out:st=${Math.max(0, segment.durationSec - 0.012).toFixed(6)}:d=0.012` : '';
+    const prev = audioJoinFade(segments, index);
+    const next = audioJoinFade(segments, index + 1);
+    const audioStart = segment.startSec - prev / 2;
+    const audioEnd = segment.endSec + next / 2;
+    const audioDur = Math.max(0, audioEnd - audioStart);
+    // A few milliseconds only at the file edges. Joins crossfade instead of fading each side to silence.
+    let edge = '';
+    if (index === 0 && segment.durationSec > 0.05) edge += ',afade=t=in:st=0:d=0.006';
+    if (index === segments.length - 1 && audioDur > 0.05) edge += `,afade=t=out:st=${Math.max(0, audioDur - 0.006).toFixed(6)}:d=0.006`;
     return `[0:v]trim=start_frame=${segment.fs}:end_frame=${segment.fe},setpts=PTS-STARTPTS,fps=${fps}${look}[v${index}];` +
-      `[0:a]atrim=start=${open}:end=${close},asetpts=PTS-STARTPTS${fade},apad=whole_dur=${span},atrim=0:${span}[a${index}]`;
+      `[0:a]atrim=start=${audioStart.toFixed(6)}:end=${audioEnd.toFixed(6)},asetpts=PTS-STARTPTS${edge},apad=whole_dur=${audioDur.toFixed(6)},atrim=0:${audioDur.toFixed(6)}[a${index}]`;
   });
-  const concat = segments.map((_, index) => `[v${index}][a${index}]`).join('') + `concat=n=${segments.length}:v=1:a=1[v][a]`;
-  return parts.join(';') + ';' + concat;
+  const video = `${segments.map((_, index) => `[v${index}]`).join('')}concat=n=${segments.length}:v=1:a=0[v]`;
+  const audio = [];
+  if (segments.length === 1) audio.push('[a0]anull[a]');
+  else {
+    let current = 'a0';
+    for (let index = 1; index < segments.length; index++) {
+      const out = index === segments.length - 1 ? 'a' : `ax${index}`;
+      const fade = audioJoinFade(segments, index);
+      audio.push(fade
+        ? `[${current}][a${index}]acrossfade=d=${fade.toFixed(3)}:c1=qsin:c2=qsin:o=1[${out}]`
+        : `[${current}][a${index}]concat=n=2:v=0:a=1[${out}]`);
+      current = out;
+    }
+  }
+  return `${parts.join(';')};${video};${audio.join(';')}`;
 }
 
 export function renderFineCut({source, cutlist, clip, output, fps = 30, enhance = false}) {

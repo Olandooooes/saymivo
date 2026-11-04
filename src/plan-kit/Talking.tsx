@@ -1,26 +1,27 @@
 import React from 'react';
 import {AbsoluteFill, OffthreadVideo} from 'remotion';
-import {talentScale, windowRect, type PlanStyle} from '../plan.mjs';
+import type {PlanStyle} from '../plan.mjs';
+
+// Editor preview matches the export: full-bleed 16:9, pull back to 0.80
+// (push 1.08), original picture, mirror only the uncovered edge. No wallpaper
+// and no rounded window.
+const FACE = {
+  medium: '30% 46%',
+  'shift-right': '70% 46%',
+  punch: '50% 42%',
+} as const;
 
 export function Talking({shot, src, style, time}: {shot: string; src?: string; style?: Partial<PlanStyle>; time?: number}) {
-  const scale = talentScale(shot, style);
-  const rect = windowRect(shot, style);
-  const framed = (style?.talentFraming ?? 'framed') !== 'fullscreen';
-  const inner = shot === 'punch' ? (framed ? (style?.punchScale ?? 1.1) : 1) : 1;
+  const zoom = shot === 'punch' ? 1.08 : 0.8;
+  const origin = FACE[shot as keyof typeof FACE] ?? FACE.medium;
+  void style;
   return (
-    <AbsoluteFill style={{background: '#14120f', overflow: 'hidden'}} data-talent-scale={scale} data-talent-shot={shot}>
-      <div style={{
-        position: 'absolute',
-        left: `${rect.x * 100}%`,
-        top: `${rect.y * 100}%`,
-        width: `${rect.w * 100}%`,
-        height: `${rect.h * 100}%`,
-        borderRadius: framed ? 28 : 0,
-        overflow: 'hidden',
-        boxShadow: framed ? '0 18px 40px rgba(0,0,0,0.35)' : undefined,
-      }}>
-        {src ? <OffthreadVideo src={src} style={{width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${inner})`, transformOrigin: '50% 42%'}} /> : <div style={{width: '100%', height: '100%', background: '#333'}} />}
-        {shot === 'punch' ? <AbsoluteFill style={{background: 'radial-gradient(ellipse 62% 70% at 50% 40%, rgba(0,0,0,0) 46%, rgba(0,0,0,0.55) 100%)'}} /> : null}
+    <AbsoluteFill style={{background: '#111', overflow: 'hidden'}} data-talent-scale={zoom} data-talent-shot={shot} data-framing="fullbleed">
+      {zoom < 1 && src ? (
+        <OffthreadVideo src={src} style={{position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: origin, transform: 'scaleX(-1)'}} />
+      ) : null}
+      <div style={{position: 'absolute', inset: 0, transform: `scale(${zoom})`, transformOrigin: origin}}>
+        {src ? <OffthreadVideo src={src} style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: origin}} /> : <div style={{width: '100%', height: '100%', background: '#333'}} />}
       </div>
       {time != null ? <span style={{display: 'none'}}>{time}</span> : null}
     </AbsoluteFill>
