@@ -36,6 +36,25 @@ test('a chopped clause and an invented chapter title are dropped', () => {
   assert.equal(whole.plan.sentences[0].punch.text, sentence.replace(/[，,。！？!?、；;：:\s]/g, ''));
 });
 
+test('slide points stay in speech order and a one-line card is dropped', () => {
+  const words = spoken('先看第一件再看第二件', 0);
+  const sentence = words.map(word => word.text).join('');
+  const plan = {sentences: [{
+    id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'medium',
+    slide: {kind: 'checklist', items: [
+      {id: 'b', title: '再看第二件', atWordId: words[5].id},
+      {id: 'a', title: '先看第一件', atWordId: words[0].id},
+    ]},
+  }]};
+  const checked = validatePlan(plan, {words});
+  assert.deepEqual(checked.plan.sentences[0].slide.items.map(item => item.title), ['先看第一件', '再看第二件']);
+  const thin = validatePlan({sentences: [{
+    id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'medium',
+    slide: {kind: 'checklist', items: [{id: 'a', title: '先看第一件', atWordId: words[0].id}]},
+  }]}, {words});
+  assert.equal(thin.plan.sentences[0].slide, null);
+});
+
 test('framed portraits stay within the configured source-pixel cap on every shot', () => {
   assert.equal(DEFAULT_STYLE.talentFraming, 'framed');
   assert.ok(DEFAULT_STYLE.windowScale >= 0.6 && DEFAULT_STYLE.windowScale <= 0.7);

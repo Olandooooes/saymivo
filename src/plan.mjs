@@ -273,9 +273,10 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
         issues.push({sentenceId: next.id, code: 'schema', message: '全屏页种类不受支持'});
         next.slide = null;
       } else {
+        const spoken = next.text ?? '';
+        const spokenFold = fold(spoken);
         next.slide.items = (next.slide.items ?? []).map(item => {
-          const spoken = next.text ?? '';
-          if (item.title && (!fold(spoken).includes(fold(item.title)) || cutsClause(item.title, spoken) || inventedFacts(item.title, spoken) || !claim(item.title))) {
+          if (item.title && (!spokenFold.includes(fold(item.title)) || cutsClause(item.title, spoken) || inventedFacts(item.title, spoken) || !claim(item.title))) {
             next.status = 'rejected-hallucination';
             issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '全屏页文字不在这一句原话里'});
             return {...item, title: '', status: 'rejected-hallucination'};
@@ -284,7 +285,15 @@ export function validatePlan(plan, {words = [], removes = []} = {}) {
           const word = wordById(words, item.atWordId);
           if (!word || wordIsCut(word, removes)) return {...item, status: 'proposed', atMs: null};
           return {...item, status: item.status === 'rejected-hallucination' ? item.status : 'aligned', atMs: word.startMs};
+        }).sort((a, b) => {
+          const left = spokenFold.indexOf(fold(a.title));
+          const right = spokenFold.indexOf(fold(b.title));
+          return (left < 0 ? 9999 : left) - (right < 0 ? 9999 : right);
         });
+        if (next.slide.items.filter(item => fold(item.title)).length < 2) {
+          issues.push({sentenceId: next.id, code: 'rejected-hallucination', message: '卡片要点不够，已不用卡片'});
+          next.slide = null;
+        }
       }
     }
     return next;

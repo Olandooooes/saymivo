@@ -345,27 +345,32 @@ def test_templates_cover_the_catalog():
         phrase('先收集需要的材料', 20.6, 22.0),
         phrase('再核对一遍', 22.4, 23.4),
         phrase('整理成能检查的结果', 23.8, 25.4),
-        phrase('关键的变化就是从旧做法', 28.0, 30.0),
-        phrase('走向一套新做法', 30.4, 31.8),
-        phrase('但这里有个误区', 34.0, 35.2),
-        phrase('能自己做完', 35.6, 36.6),
-        phrase('不代表每一步都可靠', 37.0, 38.6),
-        phrase('找错材料', 39.0, 40.0),
-        phrase('理解错要求', 40.4, 41.4),
-        phrase('都可能让结果跑偏', 42.0, 43.6),
-        phrase('接下来会看三件事', 46.0, 47.4),
-        phrase('第一能不能做完', 48.0, 49.4),
-        phrase('第二结果能不能检查', 50.0, 51.6),
-        phrase('第三出错能不能改', 52.2, 53.8),
-        phrase('拿正在做的这个工具来说', 56.0, 57.8),
-        phrase('先导入一段素材', 58.2, 59.4),
-        phrase('再整理字幕', 59.8, 61.0),
-        phrase('然后安排画面', 61.4, 62.6),
-        phrase('就这句', 64.0, 64.8),
-        phrase('从草稿到成片就这一步', 66.0, 68.0),
-        phrase('结尾把这句话留下', 70.0, 72.2),
+        phrase('再把后面的步骤接起来', 26.2, 27.2),
+        phrase('先标出重点', 27.4, 28.2),
+        phrase('再排好顺序', 28.4, 29.2),
+        phrase('然后收成一页', 29.4, 30.4),
+        phrase('关键的变化就是从旧做法', 32.0, 34.0),
+        phrase('走向一套新做法', 34.4, 35.8),
+        phrase('但这里有个误区', 38.0, 39.2),
+        phrase('第一会找错材料', 39.6, 40.8),
+        phrase('第二会理解错要求', 41.2, 42.6),
+        phrase('第三会让结果跑偏', 43.0, 44.4),
+        phrase('这句单独再说一次', 46.0, 47.4),
+        phrase('接下来会看三件事', 50.0, 51.4),
+        phrase('第一能不能做完', 52.0, 53.4),
+        phrase('第二结果能不能检查', 54.0, 55.6),
+        phrase('第三出错能不能改', 56.2, 57.8),
+        phrase('拿正在做的这个工具来说', 60.0, 61.8),
+        phrase('先导入一段素材', 62.2, 63.4),
+        phrase('再整理字幕', 63.8, 65.0),
+        phrase('然后安排画面', 65.4, 66.6),
+        phrase('就这句', 68.0, 68.8),
+        phrase('从草稿到成片就这一步', 70.0, 72.0),
+        phrase('结尾把这句话留下', 74.0, 76.2),
+        phrase('把这两个步骤接起来', 78.0, 78.8),
+        phrase('先核对结果', 79.0, 79.8),
     ]
-    scenes, _stills = draft.draft(phrases, 74)
+    scenes, _stills = draft.draft(phrases, 150)
     found = {row['template'] for row in scenes['overlays']}
     found.update(row['layers'][0]['template'] for row in scenes['pages'])
     needed = {
@@ -386,10 +391,92 @@ def test_templates_cover_the_catalog():
         if row['shot'] == 'PUSH':
             push += nxt - row['at']
             assert nxt - row['at'] <= 2.5
-    assert wide >= 0.55 * scenes['duration'], wide
-    assert push <= 0.16 * scenes['duration'] + 0.1, push
+    assert wide >= 0.85 * scenes['duration'] - 0.05, wide
+    assert push <= 0.05 * scenes['duration'] + 0.05, push
+    shares = draft.shot_shares(scenes)
+    assert shares['share']['wide'] >= 0.85 - 1e-6, shares
+    assert shares['share']['push'] <= 0.05 + 1e-6, shares
+    assert draft.pairing_problems(scenes, phrases) == [], draft.pairing_problems(scenes, phrases)
     assert draft.duplicate_frames(scenes, phrases) == []
-    print('catalog-ok', sorted(found), 'wide', round(wide, 1), 'push', round(push, 1))
+    short, _ = draft.draft(phrases, 91.366)
+    short_shares = draft.shot_shares(short)
+    assert short_shares['share']['wide'] >= 0.85 - 1e-6, short_shares
+    assert short_shares['share']['push'] <= 0.05 + 1e-6, short_shares
+    assert draft.pairing_problems(short, phrases) == []
+    print('catalog-ok', sorted(found), 'wide', round(shares['share']['wide'], 3), 'push', round(shares['share']['push'], 3), 'pip', round(shares['share']['pip'], 3),
+          'short91', round(short_shares['share']['wide'], 3), round(short_shares['share']['push'], 3), round(short_shares['share']['pip'], 3))
+
+
+def test_unrelated_lines_stay_on_their_own_screens():
+    draft = _load_draft()
+    phrases = [
+        {'text': '但这里有个误区', 's': 0.4, 'e': 1.6, 'tokens': []},
+        {'text': '不代表每一步都可靠', 's': 2.0, 'e': 3.4, 'tokens': []},
+        {'text': '找错资料', 's': 3.8, 'e': 4.8, 'tokens': []},
+        {'text': '能自己执行', 's': 5.2, 'e': 6.4, 'tokens': []},
+        {'text': '理解错要求', 's': 6.8, 'e': 8.0, 'tokens': []},
+        {'text': '结尾把这句话留下', 's': 18.0, 'e': 20.0, 'tokens': []},
+    ]
+    scenes, _stills = draft.draft(phrases, 22)
+    claims = ('但这里有个误区', '不代表每一步都可靠', '找错资料', '能自己执行', '理解错要求')
+    nodes = list(scenes['overlays'])
+    for page in scenes['pages']:
+        nodes.extend(page['layers'])
+    for node in nodes:
+        texts = [text for text, _at in draft.iter_timed_texts(node)]
+        hits = [text for text in texts if text in claims]
+        assert len(hits) <= 1, (node.get('template'), hits)
+    assert draft.pairing_problems(scenes, phrases) == []
+    print('pair-ok')
+
+
+def test_carousel_merges_points_or_drops():
+    draft = _load_draft()
+    phrases = [
+        {'text': '开场先把这件事讲清楚', 's': 0.2, 'e': 1.4, 'tokens': []},
+        {'text': '接下来会看三件事', 's': 2.0, 'e': 3.2, 'tokens': []},
+        {'text': '第一能不能做完', 's': 3.6, 'e': 4.8, 'tokens': []},
+        {'text': '第二结果能不能检查', 's': 5.2, 'e': 6.6, 'tokens': []},
+        {'text': '第三出错能不能改', 's': 7.0, 'e': 8.4, 'tokens': []},
+        {'text': '结尾把这句话留下', 's': 36.0, 'e': 38.0, 'tokens': []},
+    ]
+    scenes, _stills = draft.draft(phrases, 48)
+    cards = [page['layers'][0] for page in scenes['pages'] if page['layers'][0]['template'] == 'card_carousel']
+    assert cards, [page['layers'][0]['template'] for page in scenes['pages']]
+    lines = [line['text'] for line in cards[0]['cards'][0]['lines']]
+    assert lines == ['第一能不能做完', '第二结果能不能检查', '第三出错能不能改'], lines
+    assert all(len(card.get('lines') or []) >= 2 for layer in cards for card in layer['cards'])
+    thin_phrases = [
+        {'text': '开场先把这件事讲清楚', 's': 0.2, 'e': 1.4, 'tokens': []},
+        {'text': '接下来会看三件事', 's': 2.0, 'e': 3.2, 'tokens': []},
+        {'text': '第三只有这句', 's': 3.6, 'e': 4.8, 'tokens': []},
+        {'text': '结尾把这句话留下', 's': 20.0, 'e': 22.0, 'tokens': []},
+    ]
+    thin, _stills = draft.draft(thin_phrases, 28)
+    assert all(page['layers'][0]['template'] != 'card_carousel' for page in thin['pages'])
+    print('card-ok')
+
+
+def test_contrast_halves_stay_on_one_shot():
+    draft = _load_draft()
+    sentence = '关键的变化就是从回答一个问题到开始执行'
+    phrases = [
+        {'text': '开场先把这件事讲清楚', 's': 0.2, 'e': 1.4, 'tokens': []},
+        {'text': sentence, 's': 2.0, 'e': 6.4, 'tokens': []},
+        {'text': '结尾把这句话留下', 's': 20.0, 'e': 22.0, 'tokens': []},
+    ]
+    scenes, _stills = draft.draft(phrases, 24)
+    left, right = sentence.split('到', 1)
+    homes = []
+    for row in scenes['overlays']:
+        texts = [text for text, _at in draft.iter_timed_texts(row)]
+        if sentence in texts or left in texts or right in texts:
+            homes.append(texts)
+    assert len(homes) == 1, homes
+    if left in homes[0] or right in homes[0]:
+        assert left in homes[0] and right in homes[0]
+    assert draft.pairing_problems(scenes, phrases) == []
+    print('contrast-ok')
 
 
 if __name__ == '__main__':
@@ -399,6 +486,9 @@ if __name__ == '__main__':
     test_thin_card_falls_back()
     test_gap_does_not_emit_an_empty_template()
     test_templates_cover_the_catalog()
+    test_unrelated_lines_stay_on_their_own_screens()
+    test_carousel_merges_points_or_drops()
+    test_contrast_halves_stay_on_one_shot()
     test_hangover_bridges_a_short_vocalization()
     test_display_replacement_keeps_longer_latin()
     test_phrase_display_uses_lexicon()

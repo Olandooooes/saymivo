@@ -26,7 +26,7 @@ PRIORITY = (
 RICH_WHOLE = {
     'error_stack', 'doc_stack', 'card_carousel', 'editor_mock', 'page_example',
     'scattered_capsules', 'headline_badges', 'contrast_arrow', 'flow_pills',
-    'side_panel', 'title_card', 'neon_end',
+    'title_card', 'neon_end',
 }
 MAX_SHOT = 3.0
 
@@ -141,7 +141,9 @@ def same_idea(group, nxt):
         return True
     if contrast_open(prev) and not is_contrast(prev) and len(group) == 1 and gap < 0.85:
         return True
-    if error_head(clean(group[0].get('text'))) and len(group) < 8 and gap < 0.75 and not new_topic(text):
+    # A misconception only keeps the enumerated items that follow it.
+    # Other sentences stay on their own screens, in speech order.
+    if error_head(clean(group[0].get('text'))) and list_item(text) and len(group) < 5 and gap < 0.85:
         return True
     if any(step_intro(clean(p.get('text'))) for p in group) and len(group) < 6 and gap < 0.7 and not new_topic(text):
         return True
@@ -206,35 +208,42 @@ def title_card(texts, start, end):
     return spec
 
 
+def _ordered(texts, limit=None):
+    body = []
+    for text in texts:
+        text = clean(text)
+        if text and text not in body:
+            body.append(text)
+    if limit is not None:
+        return body[:limit]
+    return body
+
+
 def side_panel(texts, start, end):
-    take = consume(texts)
-    spec = {'template': 'side_panel', 'start': start, 'end': end, 'items': []}
-    head = take()
-    if head:
-        spec['items'].append({'text': head, 'at': at(start, end, 0.16), 'style': 'h1'})
-    accent = take()
-    if accent:
-        spec['accent'] = timed(accent, start, end, 0.45)
-    for index, style_name in enumerate(('muted', 'h2')):
-        extra = take()
-        if not extra:
-            break
-        spec['items'].append({'text': extra, 'at': at(start, end, 0.72 + index * 0.28), 'style': style_name})
-    return spec
+    """Two lines of one unit, top to bottom in speech order. A longer pile is not a panel."""
+    body = _ordered(texts)
+    if len(body) != 2:
+        return None
+    return {
+        'template': 'side_panel',
+        'start': start,
+        'end': end,
+        'items': [
+            {'text': body[0], 'at': at(start, end, 0.16), 'style': 'h1'},
+            {'text': body[1], 'at': at(start, end, 0.52), 'style': 'muted'},
+        ],
+    }
 
 
 def _pill_and_lines(kind, texts, start, end, size):
-    take = consume(texts)
+    body = _ordered(texts, 2)
     spec = {'template': kind, 'start': start, 'end': end, 'lines': []}
-    line = take()
-    label = take()
-    extra = take()
-    if line:
-        spec['lines'].append({'text': line, 'at': at(start, end, 0.28), 'size': line_size(line, size)})
-    if extra:
-        spec['lines'].append({'text': extra, 'at': at(start, end, 0.68), 'size': line_size(extra, size - 8)})
-    if label:
-        spec['pill'] = timed(label, start, end, 0.08)
+    if len(body) == 2:
+        spec['pill'] = timed(body[0], start, end, 0.08)
+        spec['lines'].append({'text': body[1], 'at': at(start, end, 0.28), 'size': line_size(body[1], size)})
+        return spec
+    if body:
+        spec['lines'].append({'text': body[0], 'at': at(start, end, 0.28), 'size': line_size(body[0], size)})
     return spec
 
 
@@ -258,15 +267,21 @@ def blur_lines(texts, start, end):
 
 
 def flow_pills(texts, start, end):
-    take = consume(texts)
+    """One contrast, or the steps of one process, both halves on this same screen."""
+    body = _ordered(texts)
+    sentence = next((text for text in body if is_contrast(text)), '')
     spec = {'template': 'flow_pills', 'start': start, 'end': end}
-    left, right, body = take(), take(), take()
-    if left:
-        spec['a'] = timed(left, start, end, 0.12)
-    if right:
-        spec['b'] = timed(right, start, end, 0.42)
-    if body:
-        spec['bottom'] = timed(body, start, end, 0.7)
+    if sentence:
+        left, right = [clean(part) for part in sentence.split('到', 1)]
+        if len(left) >= 2 and len(right) >= 2 and left != right and left != sentence and right != sentence:
+            spec['a'] = timed(left, start, end, 0.12)
+            spec['b'] = timed(right, start, end, 0.42)
+        return spec
+    if len(body) >= 2 and (contrast_open(body[0]) or step_intro(body[0])):
+        spec['a'] = timed(body[0], start, end, 0.12)
+        spec['b'] = timed(body[1], start, end, 0.42)
+        if len(body) >= 3 and step_intro(body[0]):
+            spec['bottom'] = timed(body[2], start, end, 0.7)
     return spec
 
 
@@ -312,17 +327,20 @@ def headline_badges(texts, start, end):
 
 
 def error_stack(texts, start, end):
-    body = [text for text in texts if text]
-    if len(body) < 3:
-        return pill_lines(texts, start, end)
-    verdict = body[-1]
-    items = body[:-1][:4]
+    body = _ordered(texts)
+    head = next((text for text in body if error_head(text)), '')
+    items = [text for text in body if list_item(text)]
+    if len(items) < 2:
+        return headline_pill(body[:1], start, end)
+    ordered = ([head] if head and head not in items else []) + items
+    verdict = ordered[-1]
+    rows = ordered[:-1][:4]
     return {
         'template': 'error_stack',
         'start': start,
         'end': end,
-        'items': [{'text': text, 'at': at(start, end, 0.12 + index * 0.32)} for index, text in enumerate(items)],
-        'verdict': timed(verdict, start, end, 0.2 + 0.32 * len(items)),
+        'items': [{'text': text, 'at': at(start, end, 0.12 + index * 0.32)} for index, text in enumerate(rows)],
+        'verdict': timed(verdict, start, end, 0.2 + 0.32 * len(rows)),
     }
 
 
@@ -378,21 +396,19 @@ def doc_stack(texts, start, end):
 
 
 def card_carousel(texts, start, end):
-    points = [text for text in texts if list_item(text)]
-    if len(points) < 2:
+    """Adjacent points share one card, in speech order. One thin line is not a card page."""
+    points = [text for text in _ordered(texts) if list_item(text)]
+    lines = [{'text': text} for text in points if len(text) >= 2][:4]
+    if len(lines) < 2 or sum(len(line['text']) for line in lines) < 8:
         return None
-    cards = []
-    for index, text in enumerate(points[:4]):
-        plain = text.replace(' ', '')
-        mark = re.match(r'^(第[一二三四五六七八九十]+|首先|其次|最后)', plain)
-        tag = mark.group(1) if mark else plain[:2]
-        rest = plain[len(tag):] or plain
-        if len(rest) < 2:
-            rest = plain
-        cards.append({'tag': tag, 'at': at(start, end, 0.16 + index * 0.4), 'lines': [{'text': rest}]})
-    spec = {'template': 'card_carousel', 'start': start, 'end': end, 'cards': cards}
-    header = next((text for text in texts if list_intro(text)), '')
-    if header and header not in points:
+    spec = {
+        'template': 'card_carousel',
+        'start': start,
+        'end': end,
+        'cards': [{'tag': '', 'at': at(start, end, 0.2), 'lines': lines}],
+    }
+    header = next((text for text in _ordered(texts) if list_intro(text) and text not in points), '')
+    if header:
         spec['header'] = header
     return spec
 
@@ -430,14 +446,20 @@ def rich(name, idea):
     if name == 'page_example':
         return count >= 2 and example_intro(texts[0]) and len(texts[1]) >= 4
     if name == 'error_stack':
-        return count >= 3 and any(error_head(text) for text in texts)
+        return any(error_head(text) for text in texts) and sum(1 for text in texts if list_item(text)) >= 2
     if name == 'doc_stack':
         return count >= 3 and any(step_intro(text) for text in texts)
     if name == 'scattered_capsules':
         return count >= 3 and (any(step_intro(text) for text in texts) or any(tool_intro(text) for text in texts))
     if name == 'card_carousel':
-        return sum(1 for text in texts if list_item(text)) >= 2
+        # An error list belongs on the error stack, not on a criteria card.
+        if any(error_head(text) for text in texts):
+            return False
+        points = [text for text in texts if list_item(text) and len(text) >= 2]
+        return len(points) >= 2 and sum(len(text) for text in points) >= 8
     if name == 'headline_badges':
+        if any(error_head(text) for text in texts) and not any(list_intro(text) for text in texts):
+            return False
         return any(list_intro(text) for text in texts) or sum(1 for text in texts if list_item(text)) >= 2
     if name == 'editor_mock':
         return any(tool_intro(text) for text in texts) and sum(1 for text in texts if tool_step(text)) >= 2
@@ -446,7 +468,7 @@ def rich(name, idea):
     if name == 'flow_pills':
         return count >= 2 and any(is_contrast(text) or contrast_open(text) or step_intro(text) for text in texts)
     if name == 'side_panel':
-        return count >= 2 or any(definition_follow(text) for text in texts)
+        return count == 2
     if name == 'headline_pill':
         return any(is_question(text) for text in texts)
     if name in ('blur_lines', 'pill_lines', 'title_card', 'neon_end'):
@@ -467,44 +489,98 @@ def pick_template(idea, index, used):
     return simples[index % len(simples)]
 
 
-def _can_pip(wide_sec, total, cursor, step):
+def _end_hold(total):
+    if total < 6:
+        return 0.0
+    end_at = min(total - 0.8, max(1.0, total - MAX_SHOT))
+    if end_at >= total - 0.3:
+        return 0.0
+    return max(0.0, total - end_at)
+
+
+def budget():
+    """Shot-time defaults. Zooms stay in style.json; only the shares live here."""
+    raw = _style().get('person', {}).get('budget') or {}
+    return {
+        'wide_min': float(raw.get('wide_min', 0.85)),
+        'push_max': float(raw.get('push_max', 0.05)),
+        'push_each': float(raw.get('push_each', 2.2)),
+        'push_gap': float(raw.get('push_gap', 24)),
+        'pip_each': float(raw.get('pip_each', 2.0)),
+    }
+
+
+def _nonwide_allowance(wide_sec, cursor, total):
+    """Seconds of push/window still allowed without dropping the wide share."""
     if total <= 0:
-        return True
-    rest = max(0.0, total - (cursor + step))
-    return wide_sec + rest >= 0.60 * total - 0.25
+        return MAX_SHOT
+    end_future = _end_hold(total) if cursor < total - _end_hold(total) - 0.15 else 0.0
+    return max(0.0, wide_sec - cursor + (1.0 - budget()['wide_min']) * total - end_future)
+
+
+def _pip_step(wide_sec, push_sec, cursor, total, step):
+    cfg = budget()
+    allow = _nonwide_allowance(wide_sec, cursor, total)
+    pip_step = min(step, cfg['pip_each'], allow)
+    if pip_step < 1.15:
+        return 0.0
+    return pip_step
 
 
 def _want_push(text, cursor, push_sec, last_push, wide_sec, total, step):
+    cfg = budget()
     if not text or len(text) < 2 or len(text) > 14:
+        return 0.0
+    if cursor - last_push < cfg['push_gap']:
+        return 0.0
+    allow = _nonwide_allowance(wide_sec, cursor, total)
+    pip_so_far = max(0.0, cursor - wide_sec - push_sec)
+    reserve_pages = 1 if total < 70 else 2
+    reserve = max(0.0, reserve_pages * cfg['pip_each'] - pip_so_far)
+    push_step = min(step, cfg['push_each'], max(0.0, cfg['push_max'] * total - push_sec), max(0.0, allow - reserve))
+    if push_step < 0.8:
+        return 0.0
+    return push_step
+
+
+def _text_dense(idea, cursor):
+    if not idea:
         return False
-    if cursor - last_push < 11:
-        return False
-    push_step = min(step, 2.2)
-    if push_sec + push_step > 0.15 * total + 0.05:
-        return False
-    rest = max(0.0, total - (cursor + push_step))
-    return wide_sec + rest >= 0.60 * total - 0.25
+    around = [phrase for phrase in idea if phrase['e'] > cursor - 0.05 and phrase['s'] < cursor + 2.4]
+    if len(around) >= 2:
+        return True
+    current = clean(phrase_at(idea, cursor + 0.05).get('text'))
+    return len(current) > 18
 
 
 def choose_presentation(kind, idea, room, cursor, wide_sec, push_sec, last_push, side, total):
     step = min(MAX_SHOT, room)
+    wide = 'WIDE_R' if side == 'WIDE_L' else 'WIDE_L'
     if kind == 'title_card':
         return kind, 'WIDE_C', step
     if kind in PAGE_KINDS:
-        if _can_pip(wide_sec, total, cursor, step):
-            return kind, 'PIP', step
-        kind = 'pill_lines'
+        pip_step = _pip_step(wide_sec, push_sec, cursor, total, step)
+        if pip_step:
+            return kind, 'PIP', pip_step
+        # The wide share cannot spare a window. One line on the pulled-back shot.
+        return 'headline_pill', wide, step
     current = clean(phrase_at(idea, cursor + 0.05).get('text')) if idea else ''
-    if kind in ('pill_lines', 'blur_lines', 'headline_pill', 'side_panel') and _want_push(current, cursor, push_sec, last_push, wide_sec, total, step):
-        return kind, 'PUSH', min(step, 2.2)
-    return kind, ('WIDE_R' if side == 'WIDE_L' else 'WIDE_L'), step
+    # A text-heavy beat stays pulled back. Push is a short, rare accent on one thin line.
+    if kind in ('pill_lines', 'blur_lines', 'headline_pill') and not _text_dense(idea, cursor):
+        push_step = _want_push(current, cursor, push_sec, last_push, wide_sec, total, step)
+        if push_step:
+            return kind, 'PUSH', push_step
+    return kind, wide, step
 
 
 def realize(kind, texts, start, end, blocked):
     if kind == 'title_card':
         return 'overlay', title_card(texts, start, end)
     if kind == 'side_panel':
-        return 'overlay', side_panel(texts, start, end)
+        spec = side_panel(texts, start, end)
+        if spec:
+            return 'overlay', spec
+        return 'overlay', headline_pill(_ordered(texts, 1), start, end)
     if kind == 'headline_pill':
         return 'overlay', headline_pill(texts, start, end)
     if kind == 'pill_lines':
@@ -556,12 +632,17 @@ def realize(kind, texts, start, end, blocked):
 _STYLE = None
 
 
-def clock():
+def _style():
     global _STYLE
     if _STYLE is None:
         _STYLE = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'config', 'style.json')))
-    sub = _STYLE['subtitle']
-    person = _STYLE['person']
+    return _STYLE
+
+
+def clock():
+    style = _style()
+    sub = style['subtitle']
+    person = style['person']
     morph = max(person['shot_change']['dur'], person['pip_morph']['dur'])
     return sub['lead'], sub['hold_after'], morph
 
@@ -730,9 +811,30 @@ def _holds(kind, texts):
 def _simple_kind(texts):
     if any(is_question(text) for text in texts):
         return 'headline_pill'
-    if len(texts) >= 2:
+    if len(texts) == 2:
         return 'side_panel'
-    return 'blur_lines'
+    return 'blur_lines' if len(texts) <= 1 else 'headline_pill'
+
+
+def _tally(beats):
+    wide = push = 0.0
+    for beat in beats:
+        dur = max(0.0, beat['end'] - beat['start'])
+        if beat['shot'] == 'PUSH':
+            push += dur
+        elif beat['shot'] not in ('PIP', 'END'):
+            wide += dur
+    return wide, push
+
+
+def _reserve_shown(node, texts, start, hold, reserved):
+    reserve_node(node, start, hold, reserved)
+    shown = [text for text, _at in iter_timed_texts(node)]
+    for source in _ordered(texts):
+        if source in shown:
+            continue
+        if any(part and part != source and part in source for part in shown):
+            reserved.append((source, start, hold))
 
 
 def _free_texts(texts, start, until, reserved):
@@ -893,14 +995,24 @@ def draft(phrases, total):
     overlays, pages = [], []
     built = []
     missed = []
+    shown = set()
     for beat in beats:
         until = _visible_until(beat, beats, morph, total)
         idea = spans[beat['idea']][2] if beat.get('idea') is not None and beat['idea'] < len(spans) else phrases
         whole = [clean(p.get('text')) for p in idea]
         overlap = [clean(p.get('text')) for p in idea if p['e'] > beat['start'] - 0.05 and p['s'] < beat['end'] + 0.15]
 
-        def pool_for(name, whole=whole, overlap=overlap):
-            return whole if name in RICH_WHOLE else overlap
+        def pool_for(name, whole=whole, overlap=overlap, idea=idea, beat=beat):
+            if name in RICH_WHOLE:
+                return whole
+            rows = overlap
+            if name in SIMPLE_KINDS and len(rows) > 2:
+                current = ''
+                for phrase in idea:
+                    if phrase['s'] <= beat['start'] + 0.2:
+                        current = clean(phrase.get('text'))
+                rows = [current] if current else rows[:1]
+            return rows
 
         def ready(name):
             return _holds(name, _free_texts(pool_for(name), beat['start'], until, reserved))
@@ -911,7 +1023,7 @@ def draft(phrases, total):
                 missed.append(kind)
             replacement = None
             for name in missed:
-                if name in PAGE_KINDS and beat['shot'] not in ('PIP', 'END'):
+                if name in PAGE_KINDS and beat['shot'] not in ('PIP', 'END') and not _pip_step(*_tally(built), beat['start'], total, beat['end'] - beat['start']):
                     continue
                 if rich(name, idea) and ready(name):
                     replacement = name
@@ -924,35 +1036,66 @@ def draft(phrases, total):
                 kind = _simple_kind(free_now) if free_now else kind
         elif kind in SIMPLE_KINDS and missed:
             for name in list(missed):
-                if name in PAGE_KINDS and beat['shot'] not in ('PIP', 'END'):
+                if name in PAGE_KINDS and beat['shot'] not in ('PIP', 'END') and not _pip_step(*_tally(built), beat['start'], total, beat['end'] - beat['start']):
                     continue
                 if rich(name, idea) and ready(name):
                     missed.remove(name)
                     kind = name
                     break
+        if kind not in STRUCTURAL_KINDS and kind in shown:
+            for name in PRIORITY:
+                if name in shown:
+                    continue
+                if rich(name, idea) and _holds(name, _free_texts(pool_for(name), beat['start'], until, reserved)):
+                    kind = name
+                    break
         texts = _free_texts(pool_for(kind), beat['start'], until, reserved)
+        if beat['kind'] == 'neon_end':
+            closing = [clean(phrase.get('text')) for phrase in phrases if clean(phrase.get('text'))]
+            texts = closing[-1:] or texts
         role, spec = realize(kind, texts, beat['span_start'], beat['span_end'] if role_expects_overlay(beat) else beat['end'], _blocked(reserved, beat['start'], until))
         if not any(True for _text, _at in iter_timed_texts(spec)):
+            if beat['shot'] == 'PIP':
+                beat = dict(beat)
+                beat['shot'] = 'WIDE_L' if int(beat['start']) % 2 == 0 else 'WIDE_R'
             built.append(beat)
             continue
         # realize's start/end: pages should cover the shot, overlays the span
+        idea_end = spans[beat['idea']][1] if beat.get('idea') is not None and beat['idea'] < len(spans) else until
+        hold = max(until, idea_end)
+        if role == 'page' and spec.get('template') != 'neon_end' and beat['shot'] not in ('PIP', 'END'):
+            wide_sec, push_sec = _tally(built)
+            pip_step = _pip_step(wide_sec, push_sec, beat['start'], total, beat['end'] - beat['start'])
+            if not pip_step:
+                role, spec = 'overlay', headline_pill(_ordered(texts, 1), beat['span_start'], beat['span_end'])
+            else:
+                original_end = beat['end']
+                beat = dict(beat)
+                beat['shot'] = 'PIP'
+                beat['end'] = round(min(original_end, beat['start'] + pip_step), 3)
+                beat['_resume'] = original_end
         if role == 'page':
             spec['start'] = beat['start']
             spec['end'] = beat['end']
-            if beat['shot'] not in ('PIP', 'END'):
+            if spec.get('template') == 'neon_end':
                 beat = dict(beat)
-                beat['shot'] = 'END' if spec['template'] == 'neon_end' else 'PIP'
+                beat['shot'] = 'END'
             page = {'start': beat['start'], 'end': beat['end'], 'bg': _page_bg(spec['template']), 'layers': [spec]}
-            reserve_node(page, beat['start'], until, reserved)
+            _reserve_shown(page, texts, beat['start'], hold, reserved)
             pages.append(page)
+            shown.add(spec['template'])
             built.append(beat)
+            resume = beat.get('_resume')
+            if resume and resume > beat['end'] + 0.2:
+                built.append(_beat(beat['end'], resume, 'WIDE_L' if int(beat['end']) % 2 == 0 else 'WIDE_R', 'blur_lines'))
             continue
         if beat['shot'] in ('PIP', 'END') and spec['template'] not in ('neon_end',):
             beat = dict(beat)
             beat['shot'] = 'WIDE_L' if int(beat['start']) % 2 == 0 else 'WIDE_R'
         spec['start'], spec['end'] = beat['span_start'], beat['span_end']
-        reserve_node(spec, beat['span_start'], beat['span_end'], reserved)
+        _reserve_shown(spec, texts, beat['span_start'], hold, reserved)
         overlays.append(spec)
+        shown.add(spec['template'])
         built.append(beat)
 
     shots = [{'at': beat['start'], 'shot': beat['shot']} for beat in built]
@@ -986,6 +1129,57 @@ def _still_at(beats, pred, fallback, total):
     return round(min(fallback, max(0.4, min(19.5, total - 0.2))), 3)
 
 
+def shot_shares(scenes):
+    total = float(scenes.get('duration') or 0)
+    seconds = {'wide': 0.0, 'push': 0.0, 'pip': 0.0, 'end': 0.0}
+    shots = scenes.get('shots') or []
+    for index, row in enumerate(shots):
+        nxt = shots[index + 1]['at'] if index + 1 < len(shots) else total
+        shot = row['shot']
+        key = 'wide' if str(shot).startswith('WIDE') else str(shot).lower()
+        seconds[key] = seconds.get(key, 0.0) + max(0.0, nxt - row['at'])
+    share = {key: (value / total if total else 0.0) for key, value in seconds.items()}
+    return {'seconds': seconds, 'share': share, 'duration': total}
+
+
+def pairing_problems(scenes, phrases):
+    """Same-screen copy must follow speech order and a card must hold more than one line."""
+    problems = []
+
+    def when(text):
+        for phrase in phrases:
+            spoken = clean(phrase.get('text'))
+            if not spoken or not text:
+                continue
+            if text == spoken or text in spoken:
+                at = spoken.find(text)
+                return phrase['s'] + (0 if at < 0 else at) * 0.001
+        return None
+
+    nodes = list(scenes.get('overlays') or [])
+    for page in scenes.get('pages') or []:
+        nodes.extend(page.get('layers') or [])
+    for node in nodes:
+        rows = []
+        for text, at_time in iter_timed_texts(node):
+            found = when(text)
+            if found is None:
+                problems.append(('outside', node.get('template')))
+            else:
+                rows.append((at_time, found))
+        speech = [found for _at, found in sorted(rows)]
+        if speech != sorted(speech):
+            problems.append(('order', node.get('template')))
+        if node.get('template') in SIMPLE_KINDS and len(rows) > 2:
+            problems.append(('pile', node.get('template')))
+        if node.get('template') == 'card_carousel':
+            for card in node.get('cards') or []:
+                lines = card.get('lines') or []
+                if len(lines) < 2:
+                    problems.append(('empty-card', node.get('start')))
+    return problems
+
+
 def main(wd):
     phrases = json.load(open(os.path.join(wd, 'phrases.json')))
     if not phrases:
@@ -1000,8 +1194,12 @@ def main(wd):
         names.append(row['template'])
     for row in scenes['pages']:
         names.append(row['layers'][0]['template'])
+    shares = shot_shares(scenes)
+    problems = pairing_problems(scenes, phrases)
     print('templates', ' '.join(sorted(set(names))))
     print('opening', ' '.join(names), 'stills', stills)
+    print('shares', ' '.join('%s %.1f%% (%.2fs)' % (key, 100 * shares['share'].get(key, 0), shares['seconds'].get(key, 0)) for key in ('wide', 'push', 'pip', 'end')))
+    print('pairing', 'ok' if not problems else problems[:8])
 
 
 if __name__ == '__main__':

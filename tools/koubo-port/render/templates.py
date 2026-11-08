@@ -366,12 +366,18 @@ def doc_stack(c, t, P, ctx):
             sc, o2 = pop(t, t0 + 0.2); scaled_layer(icon('v', px(30), col('green')), sc, cx + Lp.size[0] / 2 + 10, ys[i] * H, o2, c)
 
 def _carousel_card(cd, i, t):
-    cw, chh = int(0.42 * W), int(0.60 * H)
+    lines = cd.get('lines') or [{'text': ''}]
+    n = max(1, len(lines))
+    has_tag = bool(str(cd.get('tag') or '').strip())
+    cw = int(0.46 * W)
+    head = px(118) if has_tag else px(40)
+    chh = int(min(0.72 * H, head + n * px(78) + px(56)))
     L = card(cw, chh, px(24)).copy(); d = ImageDraw.Draw(L); ox = oy = 40
-    tg = font(px(24), 'Black'); d.rounded_rectangle([ox + px(40), oy + px(38), ox + px(40) + tg.getlength(cd['tag']) + px(36), oy + px(80)], px(10), fill=col('orange'))
-    d.text((ox + px(58), oy + px(44)), cd['tag'], font=tg, fill=(255, 255, 255, 255))
-    d.text((ox + cw - px(120), oy + px(44)), f'0{i + 1}', font=font(px(30), 'Black'), fill=(222, 218, 212, 255))
-    yy = oy + px(120)
+    if has_tag:
+        tg = font(px(24), 'Black'); d.rounded_rectangle([ox + px(40), oy + px(38), ox + px(40) + tg.getlength(cd['tag']) + px(36), oy + px(80)], px(10), fill=col('orange'))
+        d.text((ox + px(58), oy + px(44)), cd['tag'], font=tg, fill=(255, 255, 255, 255))
+        d.text((ox + cw - px(120), oy + px(44)), f'0{i + 1}', font=font(px(30), 'Black'), fill=(222, 218, 212, 255))
+    yy = oy + (px(120) if has_tag else px(36))
     line_limit = cw - ox - px(80)
     for ln in cd['lines']:
         f = font(fit_px(ln['text'], px(50), line_limit, floor=px(26)), 'Black')

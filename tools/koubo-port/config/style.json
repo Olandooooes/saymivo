@@ -200,6 +200,14 @@
    0.75,
    1.1
   ],
+  "budget": {
+   "wide_min": 0.85,
+   "push_max": 0.05,
+   "push_each": 2.2,
+   "push_gap": 24,
+   "pip_each": 2.0,
+   "note": "Share of the cut. Wide is the default 0.80 side shot. Push stays under push_max and is never used on a text-heavy beat. Text-heavy pages take the small window only while wide_min still holds."
+  },
   "shot_change": {
    "dur": 0.7,
    "easing": "ease_in_out_cubic"

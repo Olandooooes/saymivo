@@ -95,7 +95,7 @@ class Person:
         delta = PS['jump_cut_punch']['pip_delta'] if kp > 0.5 else PS['jump_cut_punch']['wide_delta']
         drift = 1 + min(PS['drift']['max'], PS['drift']['per_sec'] * max(0, t - t_kf))
         s *= (1 + delta * par) * drift
-        if kp < 0.5: s = min(s, self.cover * PS['zoom_limits'][1] * (1 + delta))
+        if kp < 0.5: s = min(s, self.cover * PS['zoom_limits'][1])
         return s, fx, fy, kp, cx, cy, d
 
     def place(self, src, s, fx, fy):
