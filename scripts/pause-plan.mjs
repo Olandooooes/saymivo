@@ -1,6 +1,18 @@
-// Pauses longer than 0.4s shrink to a 0.18s breath. Word ranges stay intact.
-export const PAUSE_BREATH_SEC=0.18;
-export const PAUSE_MIN_SEC=0.4;
+// Only an obvious drag is shortened. A natural breath, including a filler that
+// never became a word, stays. A pause after sentence punctuation can be a
+// little shorter than one in the middle of a sentence.
+export const PAUSE_MIN_SEC=1.05;
+export const PAUSE_BREATH_SEC=0.55;
+export const PAUSE_SENTENCE_MIN_SEC=0.85;
+export const PAUSE_SENTENCE_BREATH_SEC=0.42;
+export const PAUSE_DETECT_SEC=PAUSE_SENTENCE_MIN_SEC;
+const SENTENCE_END=/[。！？!?；;]$/u;
+export function pausePolicyFor(words,pieceStart){
+ const prev=[...words].reverse().find(word=>Number(word?.endMs)/1000<=pieceStart+0.08);
+ const text=String(prev?.text??prev?.word??'').trim();
+ if(SENTENCE_END.test(text))return {minSec:PAUSE_SENTENCE_MIN_SEC,breathSec:PAUSE_SENTENCE_BREATH_SEC};
+ return {minSec:PAUSE_MIN_SEC,breathSec:PAUSE_BREATH_SEC};
+}
 export function pauseSegments(clip,gaps,words=[],pad=0.15){
  const speech=words.filter(w=>w.endMs>clip.inSec*1000&&w.startMs<clip.outSec*1000).sort((a,b)=>a.startMs-b.startMs);
  const cuts=[];
@@ -13,8 +25,9 @@ export function pauseSegments(clip,gaps,words=[],pad=0.15){
    pieces=pieces.flatMap(([x,y])=>right<=x||left>=y?[[x,y]]:[[x,Math.min(y,left)],[Math.max(x,right),y]].filter(([u,v])=>v>u));
   }
   for(const [x,y] of pieces){
-   if(y-x<=PAUSE_MIN_SEC)continue;
-   const cutA=x+PAUSE_BREATH_SEC/2,cutB=y-PAUSE_BREATH_SEC/2;
+   const policy=pausePolicyFor(speech,x);
+   if(y-x<=policy.minSec)continue;
+   const cutA=x+policy.breathSec/2,cutB=y-policy.breathSec/2;
    if(cutB>cutA+.02)cuts.push([cutA,cutB]);
   }
  }

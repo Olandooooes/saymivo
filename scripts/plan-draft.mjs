@@ -17,11 +17,17 @@ const removes = cutlist.removes ?? [];
 const faceBox = faceFile ? readFaceBox(JSON.parse(fs.readFileSync(faceFile, 'utf8'))) : null;
 const clip = {inSec: 0, outSec: (Math.max(...words.map(word => word.endMs), 1000) / 1000) + 1};
 const drafted = llm
-  ? await draftWithLlm({words, removes, corrections, faceBox, clip})
+  ? await draftWithLlm({
+      words, removes, corrections, faceBox, clip,
+      onProgress: event => {
+        const action = event.status === 'retry' ? '失败，正在重试' : event.status === 'fallback' ? '已改用规则底稿' : '正在起草';
+        console.error(`${event.model}：第 ${event.batch}/${event.total} 批${action}`);
+      },
+    })
   : {plan: draftPlan({words, removes, corrections}), warnings: [], source: 'rules'};
 if (llm && drafted.source !== 'llm') console.error(drafted.warnings.map(item => item.message).join('；') || '未使用模型，改用规则底稿');
 const ready = presentation({plan: drafted.plan, words, removes, faceBox, clip});
 fs.writeFileSync(outFile, JSON.stringify({
   source: drafted.plan, words, corrections, removes, faceBox, clip, style: ready.style, projected: ready.plan, issues: ready.issues, warnings: drafted.warnings, draftSource: drafted.source,
 }, null, 2));
-console.log(JSON.stringify({sentences: ready.plan.sentences.length, issues: ready.issues.length, warnings: drafted.warnings.length, draftSource: drafted.source, outFile}));
+console.log(JSON.stringify({sentences: ready.plan.sentences.length, issues: ready.issues.length, warnings: drafted.warnings.length, draftSource: drafted.source, provider: drafted.provider ?? null, model: drafted.model ?? null, outFile}));

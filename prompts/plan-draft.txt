@@ -3,12 +3,12 @@
 输入是 JSON，字段有 words（id、text、startMs、endMs）、sentences（id、text、startMs、endMs）、face（是否有人脸盒）、style（景别约束）。这些时间已经确定，你不能改任何 startMs 或 endMs。
 
 输出一个 JSON 对象，不要 Markdown：
-- chapters：3 到 6 个。每项有 id 和 title。title 是不超过 10 个字的概括，可以比原句短，但不能出现原话里没有的数字，也不能出现原话里没有的否定词。
-- sentences：与输入句子一一对应，id 必须相同。每项可以有 shot、punch、slide、labels、cta。
+- chapters：与输入的 chapters 一一对应，不要新增或删掉。每项沿用输入的 id，并写 title。title 必须是原话里连续的一段，不要自己概括，也不要为了凑短把一个分句从中间切开。不能出现原话里没有的数字，也不能出现原话里没有的否定词。
+- sentences：与输入句子一一对应，id 必须相同。每项可以有 shot、punch、slide、labels、cta。长稿会分批送来，只填这一批。同一句里的 punch、labels、slide 必须来自这一句，不能拿别的句子的字，也不能让两个字段使用同一段文字。
 - shot 只能是 medium、shift-right、punch。不要连续三句以上使用同一种景别。punch 只给在表达观点的句子上。没有人脸盒时不要使用 shift-right。
-- punch.text 必须是该句保留词里一段连续文字，去掉标点后不超过 12 个字，并给出这段第一个词的 atWordId。
-- 听到列举或对比时，可以给 slide。kind 只能是 checklist 或 comparison。条目的 title 必须来自原话，每条给出 atWordId。slide.title 可以概括，限制与章节标题相同。
-- labels 的 text 同样必须来自原话。
+- punch.text 必须是该句保留词里一段连续文字，并给出这段第一个词的 atWordId。整句就是重点时用整句。不要在分句中间切开，例如不要把一句话的最后两三个字单独切出去。
+- 听到列举或对比时，可以给 slide。kind 只能是 checklist 或 comparison。条目的 title 必须是这一句里的连续原话，按这句话里的先后顺序写，每条给出 atWordId。slide.title 同样必须来自原话，不要概括。少于两条要点就不要给 slide。
+- labels 的 text 必须是这一句里的连续原话。字太少就不要硬填，留空。不要把一句话拆成两半，分到这个镜头和下一个镜头。
 - cta 只在原话本身是行动号召时设为 true，不要新写一句号召。
 
-如果某句没有合适的大字或全屏页，就省略该字段。
+如果某句没有合适的大字或全屏页，就省略该字段。建议如果对不上原话，会被丢掉。

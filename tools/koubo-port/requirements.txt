@@ -1,0 +1,12 @@
+# all local / free; no paid API
+numpy
+scipy
+soundfile
+opencv-python-headless>=4.8   # cv2>=5: YuNet face detector (model auto-downloaded, ~230 KB); cv2 4.x: Haar
+Pillow>=10                    # variable-font named instances (set_variation_by_name)
+funasr>=1.1                   # Paraformer-zh char timestamps (step 01)
+kaldi-native-fbank            # fbank features when torchaudio is not installed
+modelscope
+torch                         # CPU is fine for funasr
+# system: ffmpeg + ffprobe on PATH
+# fonts: NotoSansSC.ttf + NotoSerifSC.ttf (variable, OFL, Google Fonts) in code/fonts/ or $PORT_FONT_DIR

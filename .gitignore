@@ -6,6 +6,9 @@ node_modules/
 out/
 build/
 .venv/
+tools/koubo-port/.venv/
+tools/koubo-port/fonts/*.ttf
+tools/koubo-port/fonts/*.otf
 whisper.cpp/
 
 # ALL user media + generated data live in public/ (clips, projects with speech

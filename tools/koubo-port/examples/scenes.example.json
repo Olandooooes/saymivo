@@ -1,0 +1,563 @@
+{
+ "_doc": "Example scene spec. Placeholder copy only. Times: '@pN' phrase start, '@pN.e' end, '@pN#k' token k, '@pN~X' first token X, +/- offsets.",
+ "chapters": [
+  {
+   "title": "示例标题",
+   "at": 0
+  },
+  {
+   "title": "01·区别",
+   "at": "@p7-0.20"
+  },
+  {
+   "title": "02·要小心",
+   "at": "@p23-0.20"
+  },
+  {
+   "title": "03·三点",
+   "at": "@p29-0.20"
+  },
+  {
+   "title": "04·示例应用",
+   "at": "@p33-0.20"
+  }
+ ],
+ "demo_joins": [
+  3.1,
+  7.9,
+  12.4,
+  20.2,
+  33.0,
+  41.5
+ ],
+ "shots": [
+  {
+   "at": 0,
+   "shot": "WIDE_C"
+  },
+  {
+   "at": "@p2-0.30",
+   "shot": "WIDE_L"
+  },
+  {
+   "at": "@p7-0.30",
+   "shot": "WIDE_R"
+  },
+  {
+   "at": "@p11-0.10",
+   "shot": "PUSH"
+  },
+  {
+   "at": "@p12-0.30",
+   "shot": "PIP"
+  },
+  {
+   "at": "@p23-0.30",
+   "shot": "WIDE_R"
+  },
+  {
+   "at": "@p29-0.10",
+   "shot": "PUSH"
+  },
+  {
+   "at": "@p30-0.30",
+   "shot": "PIP"
+  },
+  {
+   "at": "@p33-0.30",
+   "shot": "WIDE_R"
+  },
+  {
+   "at": "@p34-0.30",
+   "shot": "PIP"
+  },
+  {
+   "at": "@p38-0.30",
+   "shot": "WIDE_C"
+  },
+  {
+   "at": "@p39-0.30",
+   "shot": "END"
+  }
+ ],
+ "overlays": [
+  {
+   "template": "title_card",
+   "start": 0,
+   "end": "@p2-0.15",
+   "title": {
+    "text": "示例标题",
+    "at": "@p0"
+   },
+   "glass": {
+    "text": "它到底难在哪？",
+    "at": "@p1"
+   },
+   "arrows": {
+    "at": "@p1+0.30",
+    "x": 0.7,
+    "y": 0.27
+   }
+  },
+  {
+   "template": "side_panel",
+   "start": "@p2-0.15",
+   "end": "@p7-0.20",
+   "items": [
+    {
+     "text": "你可能也遇到过",
+     "at": "@p2-0.05",
+     "style": "h1"
+    },
+    {
+     "text": "很多人常说",
+     "at": "@p3-0.05",
+     "style": "muted"
+    },
+    {
+     "text": "一个说法",
+     "at": "@p4",
+     "style": "h2"
+    }
+   ],
+   "accent": {
+    "text": "Demo",
+    "at": "@p5+0.12"
+   },
+   "tag": {
+    "text": "演示词",
+    "at": "@p6~演"
+   }
+  },
+  {
+   "template": "headline_pill",
+   "start": "@p7-0.20",
+   "end": "@p9-0.20",
+   "pill": {
+    "text": "旧方法",
+    "at": "@p7+0.25"
+   },
+   "lines": [
+    {
+     "text": "区别",
+     "at": "@p8"
+    },
+    {
+     "text": "是什么？",
+     "at": "@p8"
+    }
+   ]
+  },
+  {
+   "template": "contrast_arrow",
+   "start": "@p9-0.20",
+   "end": "@p12-0.15",
+   "header": {
+    "text": "最大的不同",
+    "at": "@p9"
+   },
+   "from": {
+    "text": "手动",
+    "at": "@p10"
+   },
+   "to": {
+    "text": "流程",
+    "at": "@p11",
+    "pop_at": "@p11~流"
+   }
+  },
+  {
+   "template": "blur_lines",
+   "start": "@p23-0.20",
+   "end": "@p25-0.10",
+   "out_at": "@p24-0.15",
+   "lines": [
+    {
+     "text": "不过",
+     "at": "@p23+0.15",
+     "size": 104
+    },
+    {
+     "text": "要小心",
+     "at": "@p23~要-0.08",
+     "size": 170
+    }
+   ]
+  },
+  {
+   "template": "pill_lines",
+   "start": "@p24-0.10",
+   "end": "@p25-0.10",
+   "pill": {
+    "text": "会做",
+    "at": "@p24"
+   },
+   "lines": [
+    {
+     "text": "不等于",
+     "at": "@p24~不"
+    },
+    {
+     "text": "做好",
+     "at": "@p24#5"
+    }
+   ]
+  },
+  {
+   "template": "error_stack",
+   "start": "@p25-0.10",
+   "end": "@p29-0.15",
+   "items": [
+    {
+     "text": "漏了步骤",
+     "at": "@p25"
+    },
+    {
+     "text": "顺序搞反",
+     "at": "@p26"
+    },
+    {
+     "text": "忘了检查",
+     "at": "@p27"
+    }
+   ],
+   "verdict": {
+    "text": "结果会走样",
+    "at": "@p28"
+   }
+  },
+  {
+   "template": "headline_badges",
+   "start": "@p29-0.15",
+   "end": "@p30-0.10",
+   "pill": {
+    "text": "判断方法",
+    "at": "@p29"
+   },
+   "headline": {
+    "text": "三点",
+    "at": "@p29~三"
+   },
+   "badges": {
+    "n": 3,
+    "at": "@p29~三+0.05"
+   }
+  },
+  {
+   "template": "pill_lines",
+   "start": "@p33-0.15",
+   "end": "@p34-0.20",
+   "pill": {
+    "text": "目的相同",
+    "at": "@p33+0.40"
+   },
+   "lines": [
+    {
+     "text": "示例应用",
+     "at": "@p33~示"
+    }
+   ]
+  },
+  {
+   "template": "flow_pills",
+   "start": "@p38-0.15",
+   "end": "@p39-0.20",
+   "a": {
+    "text": "开始",
+    "at": "@p38~开"
+   },
+   "b": {
+    "text": "完成",
+    "at": "@p38#4"
+   },
+   "bottom": {
+    "text": "省了多少事",
+    "at": "@p38+0.60"
+   }
+  }
+ ],
+ "pages": [
+  {
+   "id": "example",
+   "bg": "offwhite",
+   "start": "@p12-0.30",
+   "end": "@p17-0.10",
+   "layers": [
+    {
+     "template": "page_example",
+     "exit_at": "@p15-0.20",
+     "brand": "EXAMPLE",
+     "kicker": {
+      "text": "比如说",
+      "at": "@p12"
+     },
+     "title": [
+      {
+       "text": "写一份",
+       "at": "@p13"
+      },
+      {
+       "text": "周计划",
+       "at": "@p13~周",
+       "accent": true
+      }
+     ],
+     "caption": "比如说：一个小需求",
+     "card": {
+      "at": "@p14",
+      "lead": "如果只",
+      "big": "列标题",
+      "node": "大纲"
+     },
+     "capsule": {
+      "text": "只列标题",
+      "at": "@p14~列"
+     }
+    },
+    {
+     "template": "scattered_capsules",
+     "start": "@p15-0.10",
+     "lead": {
+      "text": "然后",
+      "at": "@p15"
+     },
+     "items": [
+      {
+       "text": "买菜",
+       "at": "@p15~买"
+      },
+      {
+       "text": "洗菜",
+       "at": "@p15~洗"
+      },
+      {
+       "text": "切菜",
+       "at": "@p15~切"
+      }
+     ],
+     "capsule": {
+      "text": "全都要亲自来",
+      "at": "@p16"
+     }
+    }
+   ]
+  },
+  {
+   "id": "chain",
+   "bg": "dark_glow",
+   "enter": "slide",
+   "start": "@p17-0.10",
+   "end": "@p23-0.30",
+   "layers": [
+    {
+     "template": "doc_stack",
+     "header": [
+      {
+       "text": "而有了",
+       "at": "@p17"
+      },
+      {
+       "text": "工具",
+       "at": "@p17~工",
+       "accent": true
+      },
+      {
+       "text": "和",
+       "at": "@p17~和"
+      },
+      {
+       "text": "清单",
+       "at": "@p17~清",
+       "accent": true
+      },
+      {
+       "text": "的人",
+       "at": "@p17~的"
+      }
+     ],
+     "sub": {
+      "text": "能把环节连起来",
+      "at": "@p18"
+     },
+     "slots_at": "@p18~连-0.1",
+     "items": [
+      {
+       "text": "列出清单",
+       "at": "@p19"
+      },
+      {
+       "text": "分好步骤",
+       "at": "@p20"
+      },
+      {
+       "text": "排好时间",
+       "at": "@p21"
+      },
+      {
+       "text": "得到结果",
+       "at": "@p22"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "criteria",
+   "bg": "grey",
+   "start": "@p30-0.30",
+   "end": "@p33-0.30",
+   "layers": [
+    {
+     "template": "card_carousel",
+     "header": "怎么评估一个方法 · 三点",
+     "brand": "EXAMPLE",
+     "cards": [
+      {
+       "tag": "第一",
+       "at": "@p30-0.30",
+       "lines": [
+        {
+         "text": "能不能"
+        },
+        {
+         "text": "省下时间？",
+         "highlight": "省下时间"
+        }
+       ],
+       "chips": [
+        "时间"
+       ],
+       "highlight_at": "@p30~省"
+      },
+      {
+       "tag": "第二",
+       "at": "@p31-0.30",
+       "lines": [
+        {
+         "text": "结果稳不稳定",
+         "highlight": "稳不稳定"
+        },
+        {
+         "text": "能否复用？"
+        }
+       ],
+       "chips": [
+        "稳定",
+        "复用"
+       ],
+       "highlight_at": "@p31~稳"
+      },
+      {
+       "tag": "第三",
+       "at": "@p32-0.30",
+       "lines": [
+        {
+         "text": "出问题时"
+        },
+        {
+         "text": "方不方便改",
+         "highlight": "方便改"
+        }
+       ],
+       "chips": [
+        "修改"
+       ],
+       "highlight_at": "@p32#4"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "product",
+   "bg": "offwhite",
+   "start": "@p34-0.30",
+   "end": "@p38-0.30",
+   "layers": [
+    {
+     "template": "editor_mock",
+     "title": "示例应用",
+     "subtitle": "目的相同",
+     "thumb_label": "载入一个文件",
+     "thumb_at": "@p34~载",
+     "list": [
+      {
+       "text": "示例条目一",
+       "at": "@p35"
+      },
+      {
+       "text": "示例条目二",
+       "at": "@p35+0.30"
+      },
+      {
+       "text": "示例条目三",
+       "at": "@p36"
+      }
+     ],
+     "tracks": [
+      {
+       "label": "列表",
+       "at": "@p35"
+      },
+      {
+       "label": "顺序",
+       "at": "@p36"
+      },
+      {
+       "label": "要点",
+       "at": "@p37"
+      }
+     ],
+     "markers": [
+      {
+       "x": 0.3,
+       "at": "@p37~标"
+      },
+      {
+       "x": 0.62,
+       "at": "@p37~要"
+      }
+     ],
+     "select_at": "@p37+0.40",
+     "checklist": [
+      {
+       "text": "生成列表",
+       "at": "@p35"
+      },
+      {
+       "text": "排好顺序",
+       "at": "@p36"
+      },
+      {
+       "text": "标记要点",
+       "at": "@p37"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "end",
+   "bg": "dark_end",
+   "start": "@p39-0.30",
+   "end": "@p39+3.00",
+   "layers": [
+    {
+     "template": "neon_end",
+     "lead": {
+      "text": "这就是",
+      "at": "@p39"
+     },
+     "word": {
+      "text": "Demo",
+      "at": "@p39~最"
+     },
+     "line": {
+      "text": "最想分享的一点",
+      "at": "@p39~最+0.2"
+     }
+    }
+   ]
+  }
+ ]
+}

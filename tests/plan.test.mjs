@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, layoutRects, presentation, prepareWords, punchProgress, readFaceBox, redraftSentence, subtitlePhrases, talentScale, validatePlan, windowRect} from '../src/plan.mjs';
+import {DEFAULT_STYLE, PUNCH_SPRING_MS, draftPlan, frameTalentScales, highlightAtMs, layoutRects, presentation, prepareWords, punchProgress, punchScaleFactor, readFaceBox, redraftSentence, subtitlePhrases, talentScale, validatePlan, windowRect} from '../src/plan.mjs';
 import {filterGraph, PORTRAIT_ENHANCE} from '../scripts/render-fine-cut.mjs';
 import {publicVideoPath, remuxOriginalAudio} from '../scripts/plan-files.mjs';
 import {spawnSync} from 'node:child_process';
@@ -9,6 +9,51 @@ import os from 'node:os';
 import path from 'node:path';
 
 const spoken = (text, start) => text.split('').map((char, index) => ({id: `w${start + index}`, text: char, startMs: start * 400 + index * 180, endMs: start * 400 + index * 180 + 160}));
+
+test('the editor preview is full bleed instead of the wallpaper window', () => {
+  const video = fs.readFileSync(new URL('../src/plan-kit/PlanVideo.tsx', import.meta.url), 'utf8');
+  const talking = fs.readFileSync(new URL('../src/plan-kit/Talking.tsx', import.meta.url), 'utf8');
+  assert.equal(video.includes('#2c2d4e'), false);
+  assert.equal(video.includes('radial-gradient(ellipse at 78%'), false);
+  assert.equal(talking.includes('borderRadius'), false);
+  assert.equal(talking.includes('data-framing="fullbleed"'), true);
+  assert.equal(talking.includes('1.08'), true);
+  assert.match(talking, /0\.8/);
+});
+
+test('a chopped clause and an invented chapter title are dropped', () => {
+  const words = spoken('这件事和以前的做法相比到底差在哪里', 0);
+  const sentence = words.map(word => word.text).join('');
+  const plan = {chapters: [{id: 'c1', title: '先看框架'}], sentences: [{
+    id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'medium',
+    punch: {text: sentence.slice(0, -3), atMs: 0},
+    labels: [{text: sentence.slice(-3), atMs: 200}],
+  }]};
+  const checked = validatePlan(plan, {words});
+  assert.equal(checked.plan.chapters[0].title, '');
+  assert.equal(checked.plan.sentences[0].punch, null);
+  const whole = validatePlan({sentences: [{id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'punch', punch: {text: sentence, atMs: 0}, labels: []}]}, {words});
+  assert.equal(whole.plan.sentences[0].punch.text, sentence.replace(/[，,。！？!?、；;：:\s]/g, ''));
+});
+
+test('slide points stay in speech order and a one-line card is dropped', () => {
+  const words = spoken('先看第一件再看第二件', 0);
+  const sentence = words.map(word => word.text).join('');
+  const plan = {sentences: [{
+    id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'medium',
+    slide: {kind: 'checklist', items: [
+      {id: 'b', title: '再看第二件', atWordId: words[5].id},
+      {id: 'a', title: '先看第一件', atWordId: words[0].id},
+    ]},
+  }]};
+  const checked = validatePlan(plan, {words});
+  assert.deepEqual(checked.plan.sentences[0].slide.items.map(item => item.title), ['先看第一件', '再看第二件']);
+  const thin = validatePlan({sentences: [{
+    id: 's1', startMs: 0, endMs: 4000, text: sentence, shot: 'medium',
+    slide: {kind: 'checklist', items: [{id: 'a', title: '先看第一件', atWordId: words[0].id}]},
+  }]}, {words});
+  assert.equal(thin.plan.sentences[0].slide, null);
+});
 
 test('framed portraits stay within the configured source-pixel cap on every shot', () => {
   assert.equal(DEFAULT_STYLE.talentFraming, 'framed');
@@ -145,6 +190,9 @@ test('punch motion stays visible across about four frames and uses the shared te
   assert.ok(punchProgress(at + 1, 30, 1000) > 0.2 && punchProgress(at + 1, 30, 1000) < 0.6);
   assert.ok(punchProgress(at + 2, 30, 1000) < 0.9);
   assert.equal(punchProgress(at + 4, 30, 1000), 1);
+  assert.ok(Math.abs(punchScaleFactor(0.62) - 1.08) < 0.001);
+  assert.equal(punchScaleFactor(1), 1);
+  assert.equal(fs.readFileSync(new URL('../src/plan-kit/PunchText.tsx', import.meta.url), 'utf8').includes('punchScaleFactor'), true);
   const box = layoutRects('punch').punch;
   assert.ok(box.y < 0.5, box.y);
   assert.equal(fs.readFileSync(new URL('../src/plan-kit/PunchText.tsx', import.meta.url), 'utf8').includes('layoutRects'), true);
