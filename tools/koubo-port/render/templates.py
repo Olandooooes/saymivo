@@ -127,29 +127,34 @@ def contrast_arrow(c, t, P, ctx):
         sc, o = pop(t, P['header']['at'] - 0.03)
         scaled_layer(text_layer(P['header']['text'], px(76), 'Black', stroke=6), sc, (ctx['x0'] + ctx['x1']) / 2, int(0.15 * H), o * q, c)
     A, B = P['from'], P['to']
-    if t >= A['at'] - 0.05:
-        sc, o = pop(t, A['at'] - 0.05); Lq = outline_pill(A['text'], px(44)); dim = clamp((t - B['at']) / 0.3)
+    if t >= A['at']:
+        sc, o = pop(t, A['at']); Lq = outline_pill(A['text'], px(44)); dim = clamp((t - B['at']) / 0.3)
         put_left(c, Lq, x + px(20), int(0.40 * H), sc * lerp(1, 0.85, dim), o * lerp(1, 0.65, dim) * q, pad=20)
         if dim > 0:
             Ls = Image.new('RGBA', (W, H), (0, 0, 0, 0))
             ImageDraw.Draw(Ls).line([(x + px(40), 0.40 * H), (x + px(40) + (Lq.size[0] * 0.85 - px(50)) * ease_out(dim), 0.40 * H)], fill=(255, 80, 60, 255), width=px(6))
             alpha_comp(c, Ls, 0, 0, q)
-    if t >= B['at'] - 0.05:
+    if t >= B['at']:
         ka = ease_out((t - B['at']) / 0.4); La = Image.new('RGBA', (W, H), (0, 0, 0, 0)); da = ImageDraw.Draw(La)
         x0_, y0_ = x + 0.12 * W, 0.47 * H; x1_, y1_ = lerp(x0_, x0_ + 0.10 * W, ka), lerp(y0_, 0.60 * H, ka)
         da.line([(x0_, y0_), (x1_, y1_)], fill=col('yellow'), width=px(7))
         if ka > 0.9: da.polygon([(x1_ + px(14), y1_ + px(6)), (x1_ - px(14), y1_ + px(4)), (x1_, y1_ + px(22))], fill=col('yellow'))
         alpha_comp(c, La, 0, 0, q)
-        sc, o = pop(t, B.get('pop_at', B['at']) - 0.05, 0.36)
-        scaled_layer(yellow(B['text'], px(124)), sc, (ctx['x0'] + ctx['x1']) / 2, int(0.72 * H), o * q, c)
+        sc, o = pop(t, B.get('pop_at', B['at']), 0.36)
+        scaled_layer(yellow(B['text'], px(fit_px(B['text'], 124, max(80, ctx['x1'] - ctx['x0'] - 24)))), sc, (ctx['x0'] + ctx['x1']) / 2, int(0.72 * H), o * q, c)
 
 def blur_lines(c, t, P, ctx):
     """Chapter text that slides in from off-screen with velocity motion-blur and slides out the same way.
     Trigger: a turn / caveat sentence or a chapter change. lines: [{text, at, size}]"""
     side = -1 if ctx['x0'] < W / 2 else 1
+    margin = int(0.04 * W)
     for i, ln in enumerate(P['lines']):
         L = yellow(ln['text'], px(ln.get('size', 104 if i == 0 else 170)))
-        x_to = ctx['x0'] - 30
+        x_to = max(margin, ctx['x0'] - 30)
+        room = int(0.96 * W) - x_to
+        if L.size[0] > room > 40:
+            fit = room / float(L.size[0])
+            L = L.resize((max(1, int(L.size[0] * fit)), max(1, int(L.size[1] * fit))), Image.BICUBIC)
         blur_slide(c, L, t, ln['at'], x_to + side * px(700) if side > 0 else -L.size[0] - px(80), x_to, int((0.38 + 0.24 * i) * H),
                    t_out=P.get('out_at', P['end'] - 0.3) + 0.05 * i, out_to=(W + px(100)) if side > 0 else -L.size[0] - px(200))
 

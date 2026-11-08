@@ -1,10 +1,10 @@
 """Person compositor - NO matting, NO background replacement (user fix #3).
 
 The original frame is placed on the 16:9 canvas by a similarity transform (scale + face position).
-When the person is pulled back (zoom < 1) the uncovered canvas is filled by mirroring the
-ORIGINAL frame outward. The extension stays sharp. A short ramp only hides the seam, and the
-strip below the frame is replicated so a mirrored torso does not appear. Shots are keyframes;
-every change is a smooth eased zoom.
+When the person is pulled back (zoom < 1) the uncovered canvas is filled by mirroring only the
+background beside the person. The person, including hair and a shoulder, is not mirrored.
+The extension stays sharp. A short ramp hides the seam only where that edge is background.
+Shots are keyframes; every change is a smooth eased zoom.
 """
 from common import *
 PS = STYLE['person']; SHOTS = PS['shots']; FILL = PS['fill_when_zoomed_out']
@@ -37,8 +37,150 @@ def detect_face_anchor(video_path, n=9):
     except Exception as e: print('face detection failed, using fallback:', e)
     return tuple(PS['face_anchor']['fallback'])
 
-def _blend_seam(canvas, bounds, seam):
-    """Hide the mirror crease in a band of `seam` px. Pixels further outside stay sharp."""
+def _skin_mask(src):
+    """Skin-coloured pixels in an RGB frame. Curtain and a dark shirt are not skin."""
+    u8 = np.clip(src * 255.0, 0, 255).astype(np.uint8) if src.dtype != np.uint8 else src
+    if u8.ndim == 2:
+        return np.zeros(u8.shape, dtype=bool)
+    ycrcb = cv2.cvtColor(u8, cv2.COLOR_RGB2YCrCb)
+    y = ycrcb[:, :, 0].astype(np.int16)
+    cr = ycrcb[:, :, 1].astype(np.int16)
+    cb = ycrcb[:, :, 2].astype(np.int16)
+    return (y >= 48) & (cr >= 135) & (cr <= 180) & (cb >= 80) & (cb <= 135)
+
+
+def _luma(src):
+    rgb = src[..., :3]
+    if rgb.dtype == np.uint8:
+        rgb = rgb.astype(np.float32) / 255.0
+    return 0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]
+
+
+def _person_mask(src):
+    """Skin, hair and clothing. A frame with no skin is not a person, so a
+    striped test pattern is left untouched."""
+    skin = _skin_mask(src)
+    if float(skin.mean()) < 0.004:
+        return np.zeros(skin.shape, dtype=bool)
+    luma = _luma(src)
+    col_skin = skin.mean(axis=0)
+    clean = np.flatnonzero(col_skin < 0.01)
+    if clean.size >= 8:
+        ref = float(np.median(luma[:, clean]))
+    else:
+        ref = float(np.percentile(luma, 85))
+    dark = luma < ref * 0.72
+    person = skin | dark
+    person = cv2.dilate(person.astype(np.uint8), np.ones((7, 7), np.uint8), iterations=1) > 0
+    return person
+
+
+def _clean_margin(flags):
+    """How many leading entries are False. A fully clean row returns its length."""
+    if flags.size == 0 or not flags.any():
+        return int(flags.size)
+    if flags[0]:
+        return 0
+    return int(np.argmax(flags))
+
+
+def _person_columns(src):
+    """Columns that contain the body, not a warm speckle in the curtain.
+    The cut is inset a few columns so the shoulder edge is not tiled."""
+    skin = _skin_mask(src)
+    height, width = skin.shape[:2]
+    if height == 0 or width == 0 or float(skin.mean()) < 0.004:
+        return np.zeros(width, dtype=bool)
+    luma = _luma(src)
+    col_skin = skin.mean(axis=0)
+    col_luma = np.median(luma, axis=0)
+    seed = col_skin < 0.01
+    if int(seed.sum()) >= 8:
+        ref = float(np.median(col_luma[seed]))
+    else:
+        ref = float(np.percentile(luma, 80))
+    dark_frac = (luma < ref * 0.72).mean(axis=0)
+    col = (col_skin > 0.04) | (dark_frac > 0.05)
+    return np.convolve(col.astype(np.float32), np.ones(17, np.float32), mode='same') > 0
+
+
+def _background_strip(src):
+    """Curtain columns beside the person, with hair and the shirt scrubbed out.
+
+    Returns the whole frame when nothing in it is a person. Returns None when
+    a person is present but no clean background column remains: the caller
+    must pull the shot in instead of mirroring the body.
+    """
+    grown = _person_columns(src)
+    height, width = src.shape[:2]
+    if width == 0 or not grown.any():
+        return src
+    left = _clean_margin(grown)
+    right = _clean_margin(grown[::-1])
+    if left < 8 and right < 8:
+        return None
+    if left >= right:
+        strip = src[:, :left].copy()
+    else:
+        strip = src[:, width - right:].copy()
+    return _scrub_person(strip)
+
+
+def _scrub_person(strip):
+    """Replace leftover skin or hair in an otherwise clean strip with its curtain colour."""
+    luma = _luma(strip)
+    ref = float(np.median(luma))
+    bad = _skin_mask(strip) | (luma < ref * 0.72)
+    if not bad.any():
+        return strip
+    clean = ~bad
+    if int(clean.sum()) < 16:
+        return None
+    out = np.array(strip, copy=True)
+    out[bad] = np.median(strip[clean], axis=0)
+    return out
+
+
+def _reflect_coord(coord, n):
+    coord = np.abs(np.asarray(coord, dtype=np.float64))
+    if n <= 1:
+        return np.zeros_like(coord)
+    period = 2.0 * n
+    coord = np.mod(coord, period)
+    return np.where(coord >= n, np.maximum(0.0, period - coord - 1.0), coord)
+
+
+def _edge_skin(src):
+    skin = _skin_mask(src)
+    if skin.size == 0:
+        return {'left': 1.0, 'right': 1.0, 'top': 1.0, 'bottom': 1.0}
+    return {
+        'left': float(skin[:, :3].mean()),
+        'right': float(skin[:, -3:].mean()),
+        'top': float(skin[:3, :].mean()),
+        'bottom': float(skin[-3:, :].mean()),
+    }
+
+
+def _curtain_fill(src, s, x0, y0):
+    """Mirror the curtain strip across the canvas, aligned to the placed frame.
+    None when the only pixels available are the person."""
+    strip = _background_strip(src)
+    if strip is None or strip.size == 0:
+        return None
+    strip = np.ascontiguousarray(strip, dtype=np.float32)
+    sh, sw = strip.shape[:2]
+    if sh < 2 or sw < 2:
+        return None
+    ys = _reflect_coord((np.arange(H, dtype=np.float64) + 0.5 - y0) / max(s, 1e-6), sh)
+    xs = _reflect_coord((np.arange(W, dtype=np.float64) + 0.5 - x0) / max(s, 1e-6), sw)
+    map_y, map_x = np.meshgrid(ys, xs, indexing='ij')
+    return cv2.remap(strip, map_x.astype(np.float32), map_y.astype(np.float32), cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+
+
+def _blend_seam(canvas, bounds, seam, src=None):
+    """Hide the mirror crease in a band of `seam` px. Pixels further outside stay sharp.
+    An edge that is the person is not blended, so a shoulder or the hair is not smeared out."""
     span = float(seam)
     if span <= 0:
         return canvas
@@ -47,11 +189,34 @@ def _blend_seam(canvas, bounds, seam):
     yy, xx = np.ogrid[:height, :width]
     dist = np.minimum(np.minimum(xx - x0, x1 - xx), np.minimum(yy - y0, y1 - yy))
     weight = np.clip((span - np.abs(dist)) / span, 0.0, 1.0).astype(np.float32)
+    if src is not None:
+        edge = _edge_person(src)
+        if edge['left'] >= 0.02:
+            weight = np.where(xx + 0.5 < x0, 0.0, weight)
+        if edge['right'] >= 0.02:
+            weight = np.where(xx + 0.5 >= x1, 0.0, weight)
+        if edge['top'] >= 0.02:
+            weight = np.where(yy + 0.5 < y0, 0.0, weight)
+        if edge['bottom'] >= 0.02:
+            weight = np.where(yy + 0.5 >= y1, 0.0, weight)
     if float(weight.max()) <= 0:
         return canvas
     weight = weight * weight * (3.0 - 2.0 * weight)
+    # Blur the curtain side only, so the kernel cannot pick up the person.
     blurred = cv2.GaussianBlur(canvas, (0, 0), max(1.0, span / 3.0))
     return canvas * (1.0 - weight[..., None]) + blurred * weight[..., None]
+
+
+def _edge_person(src):
+    person = _person_mask(src)
+    if person.size == 0:
+        return {'left': 1.0, 'right': 1.0, 'top': 1.0, 'bottom': 1.0}
+    return {
+        'left': float(person[:, :4].mean()),
+        'right': float(person[:, -4:].mean()),
+        'top': float(person[:4, :].mean()),
+        'bottom': float(person[-4:, :].mean()),
+    }
 
 
 class Person:
@@ -60,6 +225,8 @@ class Person:
         self.cover = max(W / src_w, H / src_h)
         self.kf = sorted(shots, key=lambda k: k['at']); self.joins = sorted(joins)
         self._ones = None
+        self.last_pose = None
+        self.last_bounds = None
 
     # ---- pose of a named shot: (scale, face_x_px, face_y_px, kp, circle_cx, circle_cy, circle_d)
     def shot_pose(self, name):
@@ -99,34 +266,74 @@ class Person:
         return s, fx, fy, kp, cx, cy, d
 
     def place(self, src, s, fx, fy):
-        """src float HxWx3 -> canvas. Uncovered edges are a sharp mirror of the original frame."""
+        """src float HxWx3 -> canvas. Gaps are a sharp mirror of the curtain beside the person.
+        If that curtain cannot cover the gap without the body, this frame is pulled in
+        or recentered until the fill is only background."""
+        s, fx, fy = self._pose_clear_of_person(src, s, fx, fy)
+        canvas, bounds = self._paint(src, s, fx, fy)
+        if canvas is None or fill_has_person(canvas, bounds, src):
+            s, fx, fy = self._pose_that_covers(fy)
+            canvas, bounds = self._paint(src, s, fx, fy)
+        self.last_pose = (s, fx, fy)
+        self.last_bounds = bounds
+        return canvas
+
+    def _pose_clear_of_person(self, src, s, fx, fy):
+        canvas, bounds = self._paint(src, s, fx, fy)
+        if canvas is not None and not fill_has_person(canvas, bounds, src):
+            return s, fx, fy
+        scale, face_x, face_y = float(s), float(fx), float(fy)
+        for _ in range(10):
+            if scale < self.cover - 1e-3:
+                scale = min(self.cover, scale + max(0.04, (self.cover - s) * 0.2))
+            else:
+                face_x, face_y = self._nudge_onto_canvas(scale, face_x, face_y)
+            canvas, bounds = self._paint(src, scale, face_x, face_y)
+            if canvas is not None and not fill_has_person(canvas, bounds, src):
+                return scale, face_x, face_y
+        return self._pose_that_covers(face_y)
+
+    def _nudge_onto_canvas(self, s, fx, fy):
+        """Move the frame toward covering the canvas. A wider gap is closed first."""
+        x0, y0, x1, y1 = self.frame_bounds(s, fx, fy)
+        if x0 > 1 and x1 - W >= x0:
+            fx -= min(x0, x1 - W) * 0.65
+        elif x1 < W - 1 and -x0 >= W - x1:
+            fx += min(W - x1, -x0) * 0.65
+        if y0 > 1 and y1 - H >= y0:
+            fy -= min(y0, y1 - H) * 0.65
+        elif y1 < H - 1 and -y0 >= H - y1:
+            fy += min(H - y1, -y0) * 0.65
+        return fx, fy
+
+    def _pose_that_covers(self, fy):
+        """No gap left to mirror. The face stays as close to the requested height as the cover allows."""
+        s = self.cover
+        fx = self.face[0] * s + max(0.0, (W - self.sw * s) / 2.0)
+        face_y = min(max(fy, self.face[1] * s), H - (self.sh - self.face[1]) * s)
+        return s, fx, face_y
+
+    def _paint(self, src, s, fx, fy):
         matrix = np.float32([[s, 0, fx - self.face[0] * s], [0, s, fy - self.face[1] * s]])
-        reflected = cv2.warpAffine(src, matrix, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
         x0, y0 = float(matrix[0, 2]), float(matrix[1, 2])
         x1, y1 = x0 + self.sw * s, y0 + self.sh * s
-        if x0 <= 0 and y0 <= 0 and x1 >= W and y1 >= H:
-            return reflected
-        canvas = reflected
+        bounds = (x0, y0, x1, y1)
+        if x0 <= 0.5 and y0 <= 0.5 and x1 >= W - 0.5 and y1 >= H - 0.5:
+            painted = cv2.warpAffine(src, matrix, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+            return painted, bounds
+        curtain = _curtain_fill(src, s, x0, y0)
+        if curtain is None:
+            return None, bounds
+        warped = cv2.warpAffine(src, matrix, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        canvas = curtain
+        yy, xx = np.ogrid[:H, :W]
+        inside = (xx + 0.5 >= x0) & (xx + 0.5 < x1) & (yy + 0.5 >= y0) & (yy + 0.5 < y1)
+        canvas = canvas.copy()
+        canvas[inside] = warped[inside]
         seam = max(0, int(FILL.get('seam_px', 12)))
-        if y1 < H - 0.5:
-            # Below the frame, repeat the last rows. Mirroring the body reads as a second person.
-            replicated = cv2.warpAffine(src, matrix, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-            y_edge = int(np.clip(round(y1), 0, H))
-            canvas = reflected.copy()
-            if seam <= 0:
-                canvas[y_edge:] = replicated[y_edge:]
-            else:
-                top = max(0, y_edge - seam)
-                bot = min(H, y_edge + seam)
-                if bot < H:
-                    canvas[bot:] = replicated[bot:]
-                if bot > top:
-                    ramp = np.linspace(0.0, 1.0, bot - top, dtype=np.float32)[:, None, None]
-                    canvas[top:bot] = reflected[top:bot] * (1.0 - ramp) + replicated[top:bot] * ramp
-        # Soften only the seam band. The mirror outside that band stays sharp.
         if seam > 0:
-            canvas = _blend_seam(canvas, (x0, y0, x1, y1), seam)
-        return canvas
+            canvas = _blend_seam(canvas, bounds, seam, src)
+        return canvas, bounds
 
     def frame_bounds(self, s, fx, fy):
         x0 = fx - self.face[0] * s
@@ -178,6 +385,13 @@ def fill_sharpness(placed, bounds, seam_px=None):
     dist = np.minimum(np.minimum(xx - x0, x1 - xx), np.minimum(yy - y0, y1 - yy))
     reference = (dist >= seam) & (dist < band)
     filled = dist < -seam
+    # Compare the fill with the curtain it continues. Hair and the shirt are
+    # sharper than cloth, and using them as the reference would fail a clean fill.
+    person = _person_mask(placed)
+    if person.any():
+        background = reference & ~person
+        if int(background.sum()) >= 80:
+            reference = background
     if int(reference.sum()) < 80 or int(filled.sum()) < 80:
         return None
     src_v = laplacian_var(placed, reference)
@@ -192,6 +406,70 @@ def fill_is_sharp(placed, bounds, min_ratio=0.45, seam_px=None):
     if ratio is None:
         return True
     return ratio >= min_ratio
+
+
+def _fill_outside(placed, bounds, seam):
+    height, width = placed.shape[:2]
+    x0, y0, x1, y1 = bounds
+    yy, xx = np.ogrid[:height, :width]
+    dist = np.minimum(np.minimum(xx - x0, x1 - xx), np.minimum(yy - y0, y1 - yy))
+    return dist < -float(seam)
+
+
+def fill_person_ratio(canvas, bounds, src=None, seam_px=None):
+    """Share of the fill that is skin, or hair and clothing darker than the curtain.
+    Zero when the frame already covers the canvas."""
+    seam = float(FILL.get('seam_px', 12) if seam_px is None else seam_px)
+    outside = _fill_outside(canvas, bounds, seam)
+    if int(outside.sum()) < 64:
+        return 0.0
+    skin = _skin_mask(canvas)
+    skin_ratio = float(skin[outside].mean())
+    if src is None or float(_skin_mask(src).mean()) < 0.004:
+        return skin_ratio
+    luma = _luma(canvas)
+    person = _person_mask(src)
+    clean = ~person
+    if int(clean.sum()) >= 16:
+        ref = float(np.median(_luma(src)[clean]))
+    else:
+        ref = float(np.percentile(_luma(src), 90))
+    dark = luma < ref * 0.62
+    return max(skin_ratio, float(dark[outside].mean()))
+
+
+def fill_has_person(canvas, bounds, src=None, seam_px=None, limit=0.01, faces=False):
+    """True when the fill contains a person. Skin, hair, clothing, or a face box all count."""
+    if fill_person_ratio(canvas, bounds, src, seam_px) > limit:
+        return True
+    if faces and _face_in_fill(canvas, bounds, seam_px):
+        return True
+    return False
+
+
+def _face_in_fill(canvas, bounds, seam_px=None):
+    seam = float(FILL.get('seam_px', 12) if seam_px is None else seam_px)
+    if canvas.dtype != np.uint8:
+        u8 = np.clip(canvas * 255.0, 0, 255).astype(np.uint8)
+    else:
+        u8 = canvas
+    bgr = cv2.cvtColor(u8, cv2.COLOR_RGB2BGR)
+    height, width = bgr.shape[:2]
+    try:
+        det = cv2.FaceDetectorYN.create(_yunet(), '', (width, height), 0.6, 0.3, 5000)
+        _, found = det.detect(bgr)
+    except Exception:
+        return False
+    if found is None:
+        return False
+    x0, y0, x1, y1 = bounds
+    for row in found:
+        cx = float(row[0] + row[2] / 2.0)
+        cy = float(row[1] + row[3] / 2.0)
+        if x0 + seam <= cx <= x1 - seam and y0 + seam <= cy <= y1 - seam:
+            continue
+        return True
+    return False
 
 
 def text_column(face_x_px):

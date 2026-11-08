@@ -14,7 +14,7 @@ import sys, os, re, json, time, argparse, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 from templates import OVERLAYS, PAGE_LAYERS, PAGE_BG
-from person import Person, detect_face_anchor, text_column, SHOTS, fill_sharpness
+from person import Person, detect_face_anchor, text_column, SHOTS, fill_sharpness, fill_has_person, fill_person_ratio
 
 REF = re.compile(r'^@p(\d+)(?:\.(e)|#(\d+)|~(.+?))?([+-][\d.]+)?$')
 TIME_KEYS = {'at', 'start', 'end', 'exit_at', 'out_at', 'slots_at', 'thumb_at', 'select_at', 'highlight_at', 'pop_at'}
@@ -45,10 +45,30 @@ def sub_layer(txt):
         d.text((S['pad_x'] - b[0], (hh - h) // 2 - b[1]), txt, font=f, fill=(255, 255, 255, 255)); return L
     return cached(('sub', txt), mk)
 
-def draw_sub(c, t, PH):
+_DRAFT = None
+
+def _draft():
+    global _DRAFT
+    if _DRAFT is None:
+        import importlib.util
+        path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'pipeline', '07_draft_scenes.py'))
+        spec = importlib.util.spec_from_file_location('draft_scenes_render', path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _DRAFT = mod
+    return _DRAFT
+
+def draw_sub(c, t, PH, scenes=None):
     S = STYLE['subtitle']; cur = [p for p in PH if p['s'] - S['lead'] <= t < p['e'] + S['hold_after']]
-    if cur:
-        L = sub_layer(cur[-1]['text']); alpha_comp(c, L, W // 2 - L.size[0] // 2, int(S['center_y'] * H - L.size[1] / 2))
+    if not cur:
+        return
+    text = cur[-1]['text']
+    if scenes is not None:
+        draft = _draft()
+        shown = {draft.fold_text(item) for item in draft.graphic_texts(scenes, t)}
+        if draft.fold_text(text) in shown:
+            return
+    L = sub_layer(text); alpha_comp(c, L, W // 2 - L.size[0] // 2, int(S['center_y'] * H - L.size[1] / 2))
 
 def chapter_bar(chaps, total, t):
     """Chapter names appear when that chapter starts, and stay on the bar after that.
@@ -108,7 +128,7 @@ class Renderer:
             for o in self.S.get('overlays', []):
                 if o['start'] - 0.5 <= t <= o['end']: OVERLAYS[o['template']](c, t, o, ctx)
         c, kp, _ = self.person.composite(t, src, lambda tt: self.page_at(tt, src), overlays)
-        draw_sub(c, t, self.PH)
+        draw_sub(c, t, self.PH, self.S)
         B = STYLE['chapter_bar']
         if B['enabled'] and self.S.get('chapters'):
             alpha_comp(c, chapter_bar(self.S['chapters'], self.total, t), 0, H - B['height'])
@@ -174,14 +194,28 @@ def main():
         if not fill_checked:
             scale, face_x, face_y, kp = R.person.pose(t)[:4]
             if kp < 0.2:
-                ratio = fill_sharpness(R.person.place(src, scale, face_x, face_y), R.person.frame_bounds(scale, face_x, face_y))
+                placed = R.person.place(src, scale, face_x, face_y)
+                bounds = R.person.last_bounds or R.person.frame_bounds(scale, face_x, face_y)
+                ratio = fill_sharpness(placed, bounds)
+                person_ratio = fill_person_ratio(placed, bounds, src)
                 fill_checked = True
-                print('fill sharpness', None if ratio is None else round(ratio, 3))
+                used = R.person.last_pose or (scale, face_x, face_y)
+                print('fill sharpness', None if ratio is None else round(ratio, 3), 'fill person', round(person_ratio, 4), 'zoom', round(used[0] / R.person.cover, 3))
                 if ratio is not None and ratio < 0.45:
                     raise SystemExit('填边比原画面糊太多: %.3f' % ratio)
+                if fill_has_person(placed, bounds, src, faces=True):
+                    raise SystemExit('填边里出现了人物: %.3f' % person_ratio)
         fr = R.frame(t, src)
         for s in stills:
-            if abs(s - t) < 0.5 / FPS: Image.fromarray(fr).save(f'{stem}_still_{s:.2f}.jpg', quality=90)
+            if abs(s - t) < 0.5 / FPS:
+                scale, face_x, face_y = R.person.pose(t)[:3]
+                plate = R.person.place(src, scale, face_x, face_y)
+                bounds = R.person.last_bounds
+                person_ratio = fill_person_ratio(plate, bounds, src)
+                print('still', round(s, 2), 'fill person', round(person_ratio, 4), 'zoom', round((R.person.last_pose or (scale,))[0] / R.person.cover, 3))
+                if fill_has_person(plate, bounds, src, faces=True):
+                    raise SystemExit('填边里出现了人物 @%.2f: %.3f' % (s, person_ratio))
+                Image.fromarray(fr).save(f'{stem}_still_{s:.2f}.jpg', quality=90)
         if wr: wr.stdin.write(fr.tobytes())
         n += 1
         if n % 60 == 0: print(n, f'{time.time() - tt:.1f}s', flush=True)

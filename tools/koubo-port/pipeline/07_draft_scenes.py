@@ -6,8 +6,10 @@ scrap of text (a card of a few characters, an empty page) falls back to a
 simpler template. Nothing here is written for one script.
 
 Each field on one template takes a different phrase. A field with nothing
-left stays empty. The same phrase may also sit in the subtitle, but it is
-not copied into a second graphic at the same time.
+left stays empty. A sentence that is already a title, a big line or a card
+is not also drawn as the subtitle. Every text layer, including the subtitle
+and the chapter bar, counts in the per-frame check. A line is not placed
+before that sentence is spoken.
 
 Later stretches keep every fitting template in the catalog moving. A shot
 does not sit still for more than 3 seconds. Shot zoom values stay in style.json.
@@ -33,6 +35,11 @@ MAX_SHOT = 3.0
 
 def clean(text):
     return ' '.join(str(text or '').split())
+
+
+def fold_text(text):
+    """One sentence, ignoring spaces and punctuation, so a caption and a big line match."""
+    return re.sub(r'[^0-9a-z\u4e00-\u9fff]+', '', clean(text).lower())
 
 
 def phrase_at(phrases, time):
@@ -749,13 +756,62 @@ def _graphics_at(scenes, t, morph):
     return texts
 
 
-def duplicate_frames(scenes, phrases, fps=30, t1=None):
+def stop_before_same_sentence(overlays, pages):
+    """If holding a line until it is finished would run into the next card that says it again, stop."""
+    nodes = [node for node in list(overlays) + list(pages) if isinstance(node, dict)]
+    nodes.sort(key=lambda node: float(node.get('start') or 0))
+    folded = []
+    for node in nodes:
+        folded.append({fold_text(text) for text, _at in iter_timed_texts(node) if fold_text(text)})
+    for index, node in enumerate(nodes):
+        end = float(node.get('end') or 0)
+        own = folded[index]
+        if not own:
+            continue
+        for later in range(index + 1, len(nodes)):
+            start = float(nodes[later].get('start') or 0)
+            if start >= end:
+                break
+            if own & folded[later]:
+                node['end'] = round(max(float(node.get('start') or 0) + 0.12, start - 0.08), 3)
+                break
+
+
+def graphic_texts(scenes, t):
+    """Every graphic string visible at t, including the chapter bar. Not the subtitle."""
+    _lead, _hold, morph = clock()
+    return [text for text in _graphics_at(scenes, t, morph) if fold_text(text)]
+
+
+def subtitle_text(phrases, t):
+    lead, hold, _morph = clock()
+    active = [phrase for phrase in phrases if phrase['s'] - lead <= t < phrase['e'] + hold]
+    if not active:
+        return ''
+    return clean(active[-1].get('text'))
+
+
+def frame_layers(scenes, phrases, t, hide_matching_subtitle=True):
+    """Text layers actually drawn at t.
+
+    The subtitle is one of them. When it repeats a graphic, it is not drawn,
+    so it is left out. Pass hide_matching_subtitle=False to count it anyway.
+    """
+    layers = list(graphic_texts(scenes, t))
+    folds = {fold_text(text) for text in layers}
+    subtitle = subtitle_text(phrases, t)
+    folded = fold_text(subtitle)
+    if folded and not (hide_matching_subtitle and folded in folds):
+        layers.append(subtitle)
+    return layers
+
+
+def duplicate_frames(scenes, phrases, fps=30, t1=None, hide_matching_subtitle=True):
     """Frames where one sentence is on screen more than once.
 
-    The subtitle may match a single graphic. It is not counted here, so that
-    one overlap stays allowed. Any other repeat fails.
+    Titles, big lines, cards, the chapter bar and the subtitle all count.
+    A subtitle that repeats a graphic is hidden, and then it is not a second copy.
     """
-    _lead, _hold, morph = clock()
     total = scenes.get('duration') or 0
     if t1 is not None:
         total = min(total, t1) if total else t1
@@ -763,15 +819,88 @@ def duplicate_frames(scenes, phrases, fps=30, t1=None):
     hits = []
     for index in range(frames):
         t = index / fps
-        counts = {}
-        for text in _graphics_at(scenes, t, morph):
-            counts[text] = counts.get(text, 0) + 1
-        repeated = sorted(text for text, count in counts.items() if count > 1)
+        folded = {}
+        shown = {}
+        for text in frame_layers(scenes, phrases, t, hide_matching_subtitle=hide_matching_subtitle):
+            key = fold_text(text)
+            folded[key] = folded.get(key, 0) + 1
+            shown.setdefault(key, text)
+        repeated = sorted(shown[key] for key, count in folded.items() if count > 1)
         if repeated:
             hits.append((round(t, 3), repeated))
             if len(hits) >= 30:
                 break
     return hits
+
+
+def _spoken_span(text, speech, near=None):
+    """When this string is said. A contrast half is located inside its sentence."""
+    text = clean(text)
+    if not text or not speech:
+        return None
+    if text in speech:
+        return speech[text]
+    best = None
+    for full, span in speech.items():
+        if text not in full:
+            continue
+        frac = full.find(text) / max(1, len(full))
+        start = span[0] + frac * max(0.0, span[1] - span[0])
+        if near is not None and abs(start - near) > 4.0 and not (span[0] - 0.3 <= near <= span[1] + 0.3):
+            continue
+        if best is None or start < best[0]:
+            best = (start, span[1])
+    return best
+
+
+def anchor_to_speech(spec, speech, limit=None):
+    """Do not show a line before it is spoken. Keep the overlay up through that line."""
+    if not speech:
+        return spec
+    latest = float(spec.get('end') or 0)
+
+    def walk(node):
+        nonlocal latest
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        if isinstance(node.get('text'), str) and isinstance(node.get('at'), (int, float)):
+            found = _spoken_span(node['text'], speech, near=float(node['at']))
+            if found:
+                node['at'] = round(max(float(node['at']), found[0]), 3)
+                latest = max(latest, found[1])
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                walk(value)
+
+    original_end = float(spec.get('end') or 0)
+    walk(spec)
+    # Only stretch the overlay when a line would otherwise start after it has gone.
+    # A line that already fits stays on its beat, so a long sentence does not pin one card down.
+    shown_at = []
+
+    def collect(node):
+        if isinstance(node, list):
+            for item in node:
+                collect(item)
+            return
+        if isinstance(node, dict):
+            if isinstance(node.get('text'), str) and isinstance(node.get('at'), (int, float)):
+                shown_at.append(float(node['at']))
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    collect(value)
+
+    collect(spec)
+    if shown_at and max(shown_at) > original_end - 0.4 and latest > original_end:
+        end = max(latest, max(shown_at) + 0.45)
+        if limit is not None:
+            end = min(end, float(limit))
+        spec['end'] = round(end, 3)
+    return spec
 
 
 def _visible_until(beat, beats, morph, total):
@@ -1077,6 +1206,12 @@ def draft(phrases, total):
         if role == 'page':
             spec['start'] = beat['start']
             spec['end'] = beat['end']
+            speech = {}
+            for phrase in idea:
+                said = clean(phrase.get('text'))
+                if said:
+                    speech[said] = (float(phrase['s']), float(phrase['e']))
+            anchor_to_speech(spec, speech, limit=beat['end'])
             if spec.get('template') == 'neon_end':
                 beat = dict(beat)
                 beat['shot'] = 'END'
@@ -1093,6 +1228,12 @@ def draft(phrases, total):
             beat = dict(beat)
             beat['shot'] = 'WIDE_L' if int(beat['start']) % 2 == 0 else 'WIDE_R'
         spec['start'], spec['end'] = beat['span_start'], beat['span_end']
+        speech = {}
+        for phrase in idea:
+            said = clean(phrase.get('text'))
+            if said:
+                speech[said] = (float(phrase['s']), float(phrase['e']))
+        anchor_to_speech(spec, speech, limit=total)
         _reserve_shown(spec, texts, beat['span_start'], hold, reserved)
         overlays.append(spec)
         shown.add(spec['template'])
@@ -1107,6 +1248,7 @@ def draft(phrases, total):
         'duration': round(total, 3),
         'end_fade': True,
     }
+    stop_before_same_sentence(overlays, pages)
     repeated = duplicate_frames(scenes, phrases)
     if repeated:
         raise ValueError('同一画面里有重复的句子: %s' % repeated[:8])

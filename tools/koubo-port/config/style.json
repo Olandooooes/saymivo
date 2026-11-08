@@ -252,7 +252,7 @@
    ]
   },
   "max_bottom_gap": 0.04,
-  "placement_note": "pulled-back shots aim the face at face_y*H but never lift the frame more than max_bottom_gap*H off the bottom edge (0.04 = hidden under the chapter bar; that strip repeats the last row). Side and top gaps are a sharp mirror of the original frame. Only the seam band (seam_px) is blended, so the crease at the frame edge is not a hard fold and the fill outside that band stays sharp. PUSH keeps the face where the cover framing has it"
+  "placement_note": "pulled-back shots aim the face at face_y*H but never lift the frame more than max_bottom_gap*H off the bottom edge (0.04 = hidden under the chapter bar). Side and top gaps are a sharp mirror of the curtain beside the person, never of the face, hair, shoulder or shirt. If that frame has no clean background to extend, the shot is pulled in or recentered until the fill contains no person. Only the seam band (seam_px) is blended, and only on edges that are background. PUSH keeps the face where the cover framing has it"
  },
  "motion": {
   "ease_out": "1-(1-t)^4  (~cubic-bezier(.25,1,.5,1))",

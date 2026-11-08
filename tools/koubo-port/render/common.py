@@ -80,12 +80,42 @@ def alpha_comp(dst, src, x, y, opacity=1.0):
     a = s[..., 3:4] * opacity
     dst[y0:y1, x0:x1] = dst[y0:y1, x0:x1] * (1 - a) + s[..., :3] * a
 
-def scaled_layer(layer, scale, cx, cy, opacity, dst):
-    """paste layer scaled around its centre at (cx, cy)"""
+def safe_box():
+    """Text stays on the canvas: 4% inset, and above the chapter bar."""
+    bar = 0
+    chapter = STYLE.get('chapter_bar') or {}
+    if chapter.get('enabled', True):
+        bar = int(chapter.get('height') or 0)
+    return (int(0.04 * W), int(0.04 * H), int(0.96 * W), int(H - max(bar, int(0.04 * H)) - 8))
+
+
+def scaled_layer(layer, scale, cx, cy, opacity, dst, box=None):
+    """Paste a layer around (cx, cy).
+
+    A layer whose centre is already on the canvas is shifted and, if it still
+    does not fit, shrunk so the whole layer stays in the safe box. A centre
+    that is still off the canvas is an entrance or exit slide and is left
+    alone, so that animation can travel in from outside the frame.
+    """
     if scale <= 0.01 or opacity <= 0.003: return
-    w, h = layer.size; nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
-    L = layer.resize((nw, nh), Image.BICUBIC) if abs(scale - 1) > 1e-3 else layer
-    alpha_comp(dst, L, int(round(cx - nw / 2)), int(round(cy - nh / 2)), opacity)
+    w, h = layer.size
+    nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+    left, top = cx - nw / 2.0, cy - nh / 2.0
+    x0, y0, x1, y1 = box or safe_box()
+    if x0 <= cx <= x1 and y0 <= cy <= y1:
+        fit = min(1.0, max(8.0, x1 - x0) / nw, max(8.0, y1 - y0) / nh)
+        nw, nh = max(1, int(round(nw * fit))), max(1, int(round(nh * fit)))
+        left, top = cx - nw / 2.0, cy - nh / 2.0
+        if left < x0:
+            left = x0
+        if left + nw > x1:
+            left = x1 - nw
+        if top < y0:
+            top = y0
+        if top + nh > y1:
+            top = y1 - nh
+    L = layer.resize((nw, nh), Image.BICUBIC) if nw != w or nh != h else layer
+    alpha_comp(dst, L, int(round(left)), int(round(top)), opacity)
 
 def put_left(dst, L, x_left, cy, scale=1.0, opacity=1.0, pad=30):
     """paste a padded text layer so its visible left edge sits at x_left"""

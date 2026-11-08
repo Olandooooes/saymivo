@@ -199,6 +199,16 @@ def test_duplicate_frames_flags_a_repeat():
     assert bad and any('同一句' in row[1] for row in bad), bad
     scenes['overlays'][0]['accent']['text'] = '另外一句'
     assert draft.duplicate_frames(scenes, phrases) == []
+    shown = draft.frame_layers(scenes, phrases, 0.6)
+    assert shown.count('同一句') == 1, shown
+    counted = draft.duplicate_frames(scenes, phrases, hide_matching_subtitle=False)
+    assert counted and any('同一句' in row[1] for row in counted), counted
+    scenes['overlays'][0]['items'][0]['text'] = '找错资料'
+    scenes['overlays'][0]['accent']['text'] = '找错资料,'
+    punct = draft.duplicate_frames(scenes, phrases[:0] or [{'text': '别的一句', 's': 0.1, 'e': 1.6, 'tokens': []}])
+    assert punct and any('找错资料' in row[1] for row in punct), punct
+    scenes['overlays'][0]['items'][0]['text'] = '同一句'
+    scenes['overlays'][0]['accent']['text'] = '另外一句'
     scenes['chapters'].append({'title': '另外一句', 'at': 0.5})
     bad = draft.duplicate_frames(scenes, phrases)
     assert bad and any('另外一句' in row[1] for row in bad), bad
@@ -232,7 +242,31 @@ def test_fill_stays_sharp():
     bad = person.fill_sharpness(blurred, bounds)
     assert bad is not None and bad < 0.45, bad
     assert not person.fill_is_sharp(blurred, bounds)
-    print('fill-ok', round(ratio, 3), round(bad, 3))
+    assert person.fill_person_ratio(placed, bounds, src) == 0
+    assert not person.fill_has_person(placed, bounds, src)
+    curtain = np.array([0.82, 0.81, 0.78], np.float32)
+    body = src.copy()
+    body[:, :220] = curtain
+    body[120:640, 420:980] = (0.86, 0.70, 0.60)
+    body[80:220, 480:900] = (0.08, 0.07, 0.06)
+    placed_body = who.place(body, scale, face_x, face_y)
+    body_bounds = who.last_bounds
+    assert person.fill_person_ratio(placed_body, body_bounds, body) <= 0.01, person.fill_person_ratio(placed_body, body_bounds, body)
+    assert not person.fill_has_person(placed_body, body_bounds, body)
+    x0 = body_bounds[0]
+    if x0 > 40:
+        edge = placed_body[:, :int(x0) - 8]
+        assert float(edge[..., 0].mean() - edge[..., 2].mean()) < 0.12
+    painted = np.full_like(placed_body, curtain)
+    painted[:90, :90] = (0.86, 0.70, 0.60)
+    forced = (400.0, 200.0, 1600.0, 1000.0)
+    assert person.fill_has_person(painted, forced, body)
+    solid = np.full_like(src, (0.86, 0.70, 0.60))
+    solid[180:620, 360:980] = (0.06, 0.05, 0.05)
+    tight = who.place(solid, scale, face_x, face_y)
+    assert not person.fill_has_person(tight, who.last_bounds, solid)
+    assert who.last_pose[0] + 1e-6 >= scale
+    print('fill-ok', round(ratio, 3), round(bad, 3), 'pulled', round(who.last_pose[0] / who.cover, 3))
 
 
 def test_shot_zoom_stays_locked():
@@ -479,6 +513,28 @@ def test_contrast_halves_stay_on_one_shot():
     print('contrast-ok')
 
 
+def test_contrast_second_half_waits_for_speech():
+    draft = _load_draft()
+    phrases = [
+        {'text': '开场先把这件事讲清楚', 's': 0.2, 'e': 1.4, 'tokens': []},
+        {'text': '关键的变化就是从回答一个问题', 's': 2.0, 'e': 4.2, 'tokens': []},
+        {'text': '走向执行一项任务', 's': 4.9, 'e': 6.4, 'tokens': []},
+        {'text': '结尾把这句话留下', 's': 20.0, 'e': 22.0, 'tokens': []},
+    ]
+    scenes, _stills = draft.draft(phrases, 24)
+    contrast = [row for row in scenes['overlays'] if row.get('template') == 'contrast_arrow']
+    assert contrast, [row.get('template') for row in scenes['overlays']]
+    row = contrast[0]
+    assert row['to']['at'] >= 4.9 - 1e-6, row['to']
+    assert row['end'] >= 6.4 - 1e-6, row['end']
+    before = draft.graphic_texts(scenes, 4.2)
+    assert all('走向执行一项任务' not in text for text in before), before
+    during = draft.graphic_texts(scenes, 5.4)
+    assert any('走向执行一项任务' in text for text in during), during
+    assert draft.duplicate_frames(scenes, phrases) == []
+    print('contrast-wait-ok', row['to']['at'], row['end'])
+
+
 if __name__ == '__main__':
     main()
     test_opening_shots()
@@ -489,6 +545,7 @@ if __name__ == '__main__':
     test_unrelated_lines_stay_on_their_own_screens()
     test_carousel_merges_points_or_drops()
     test_contrast_halves_stay_on_one_shot()
+    test_contrast_second_half_waits_for_speech()
     test_hangover_bridges_a_short_vocalization()
     test_display_replacement_keeps_longer_latin()
     test_phrase_display_uses_lexicon()
