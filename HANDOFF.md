@@ -20,7 +20,7 @@
 
 | 期 | 内容 | 状态 |
 |---|---|---|
-| 第一期 | 分镜表 + 素材库页面。转写或贴稿之后按句子拆镜头：原文、段落类型（开场/痛点/方案/结尾）、重点词（标红/荧光笔）、配图（素材库 id，空即缺素材）、动效（可多选）、备注。用本地关键词规则自动匹配，不调用付费 API。分镜写入项目旁的 `<id>.storyboard.json`，并预留字范围 `charRange`、词范围 `wordRange`、时间范围 `timeRange`（草稿里时间仍是 null）。素材从可配置的本机目录读取（默认 `~/saymivo-assets` 内的 `library.json`），不进仓库。 | **已在分支 `cursor/storyboard-library-a23b` 实现，待合并进 local-wip** |
+| 第一期 | 分镜表 + 素材库页面。转写或贴稿之后按句子拆镜头：原文、段落类型（开场/痛点/方案/结尾）、重点词（标红/荧光笔）、配图（素材库 id，空即缺素材）、动效（可多选）、备注。用本地关键词规则自动匹配，不调用付费 API。分镜写入项目旁的 `<id>.storyboard.json`，并预留字范围 `charRange`、词范围 `wordRange`、时间范围 `timeRange`（草稿里时间仍是 null）。素材从可配置的本机目录读取（默认 `~/saymivo-assets` 内的 `library.json`），不进仓库。 | **已实现，见 [PR #5](https://github.com/Olandooooes/saymivo/pull/5)，待合并进 local-wip** |
 | 第二期 | 动效时间线，按字时间自动对齐。用已留下的字/词范围，填上 `timeRange`。本期不做。 | 未开始 |
 | 第三期 | 在工作台里生成插画和界面素材。本期不做。 | 未开始 |
 
@@ -33,7 +33,7 @@
 | `main` | 旧版本 | 落后，**不要从 main 开工** |
 | `local-wip-20261103` | 用户 Mac 本地工作区全部文件（380144f）+ 已合并的 P0（合并提交 `09c6861`） | **当前主线** |
 | `cursor/p1-plan-components-7f55` | P1，[PR #3](https://github.com/Olandooooes/saymivo/pull/3)，base = local-wip，最新 `2437829` | 开放，**未合并、最新提交未经原片验收** |
-| `cursor/storyboard-library-a23b` | 白板第一期：分镜表 + 素材库。base = local-wip | 待合并。不包含 P1 的 `validatePlan` |
+| `cursor/storyboard-library-a23b` | 白板第一期：分镜表 + 素材库。[PR #5](https://github.com/Olandooooes/saymivo/pull/5)，base = local-wip | 开放，待合并。不包含 P1 的 `validatePlan` |
 | `cursor/sync-local-koubo-667c` | PR #1，另一个 agent 的同步，与 local-wip 分叉 | 不要动 |
 
 用户 Mac 上的本地仓库：`/Users/lht/Borumi Projects/koubo-studio`，当前检出 `local-wip-20261103`。Mac 没有命令行 git 凭据，推送需通过云端 agent 或其它有 GitHub 权限的环境。用户已授权直接推送本项目到 GitHub。
@@ -57,7 +57,7 @@
 
 ## 4. 下一步（按顺序）
 
-**当前优先：** 白板第一期已经做在 `cursor/storyboard-library-a23b` 上（见 1.1），等合并进 `local-wip-20261103`。不要从 `main` 开工。
+**当前优先：** 白板第一期已经做在 [PR #5](https://github.com/Olandooooes/saymivo/pull/5)（`cursor/storyboard-library-a23b`，见 1.1），等合并进 `local-wip-20261103`。不要从 `main` 开工。
 
 Mac 上接现有素材目录：
 
