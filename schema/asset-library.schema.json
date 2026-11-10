@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://saymivo.local/schema/asset-library.schema.json",
+  "title": "Saymivo local asset library index",
+  "description": "library.json at the root of the local asset directory. Chinese keys match the existing illustration index; English aliases are accepted by the reader. Deprecated items stay in the file and are hidden in the UI unless requested. Media files are not part of the git repo.",
+  "type": "object",
+  "properties": {
+    "version": {},
+    "style": {"type": "object"},
+    "items": {"type": "array", "items": {"$ref": "#/$defs/asset"}},
+    "extras": {"type": "array", "items": {"$ref": "#/$defs/asset"}}
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "path": {"type": "string"},
+        "文件路径": {"type": "string"},
+        "thumb": {"type": "string"},
+        "缩略图": {"type": "string"},
+        "category": {"type": "string"},
+        "类别": {"type": "string"},
+        "title": {"type": "string"},
+        "中文标题": {"type": "string"},
+        "keywords": {"type": "array", "items": {"type": "string"}},
+        "关键词": {"type": "array", "items": {"type": "string"}},
+        "usages": {"type": "array", "items": {"type": "string"}},
+        "适合用法": {"type": "array", "items": {"type": "string"}},
+        "用途": {"type": "array", "items": {"type": "string"}},
+        "source": {"type": "string"},
+        "来源": {"type": "string"},
+        "prompt": {"type": "string"},
+        "生成提示词": {"type": "string"},
+        "type": {"type": "string", "description": "ui, sticker, chapter, or 界面 / 贴纸印章 / 章节卡 / 插画. Omitted means 插画 unless 类别 says otherwise."},
+        "类型": {"type": "string"},
+        "deprecated": {"type": "boolean"},
+        "主色": {"type": "string"},
+        "宽": {"type": "number"},
+        "高": {"type": "number"},
+        "备注": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

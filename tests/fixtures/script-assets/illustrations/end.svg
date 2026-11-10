@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240">
+  <rect width="320" height="240" fill="#F7F2EA"/>
+  <circle cx="160" cy="108" r="52" fill="#fff" stroke="#2B2F36" stroke-width="3"/><path d="M160 108 V72 M160 108 L188 120" stroke="#B7C4A8" stroke-width="6" stroke-linecap="round"/>
+  <text x="160" y="214" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#2B2F36">占位 · 结尾</text>
+</svg>

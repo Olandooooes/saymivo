@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://saymivo.local/schema/script-storyboard.schema.json",
+  "title": "Saymivo script storyboard",
+  "description": "Shot plan saved next to a project as <projectId>.storyboard.json. timeRange stays null until phase 2 aligns motions to word timing. charRange indexes sourceText; wordRange indexes words.",
+  "type": "object",
+  "required": ["version", "kind", "source", "sourceText", "words", "shots"],
+  "properties": {
+    "version": {"const": 1},
+    "kind": {"const": "script-storyboard"},
+    "source": {"enum": ["script", "transcript"]},
+    "sourceText": {"type": "string"},
+    "words": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": {"type": "string"},
+          "startMs": {"type": ["number", "null"]},
+          "endMs": {"type": ["number", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "shots": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/shot"}
+    },
+    "updatedAt": {"type": "string"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "shot": {
+      "type": "object",
+      "required": ["id", "text", "role", "emphasis", "assetId", "match", "motions", "note", "charRange", "wordRange", "timeRange"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "text": {"type": "string"},
+        "role": {"enum": ["开场", "痛点", "方案", "结尾"]},
+        "emphasis": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "style"],
+            "properties": {
+              "text": {"type": "string"},
+              "style": {"enum": ["标红", "荧光笔"]}
+            },
+            "additionalProperties": false
+          }
+        },
+        "assetId": {"type": ["string", "null"]},
+        "match": {
+          "type": ["object", "null"],
+          "required": ["score", "keywords"],
+          "properties": {
+            "score": {"type": "number"},
+            "keywords": {"type": "array", "items": {"type": "string"}}
+          },
+          "additionalProperties": false
+        },
+        "motions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["大字回弹", "标红", "荧光笔", "印章", "打字界面", "章节转场"]}
+        },
+        "note": {"type": "string"},
+        "charRange": {"$ref": "#/$defs/range"},
+        "wordRange": {"$ref": "#/$defs/range"},
+        "timeRange": {
+          "description": "Reserved for phase 2. Drafts store null.",
+          "type": ["object", "null"],
+          "required": ["startMs", "endMs"],
+          "properties": {
+            "startMs": {"type": "number"},
+            "endMs": {"type": "number"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "range": {
+      "type": ["object", "null"],
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  }
+}
