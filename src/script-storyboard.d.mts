@@ -1,0 +1,50 @@
+export const ROLES: Array<'开场' | '痛点' | '方案' | '结尾'>;
+export const MOTIONS: Array<'大字回弹' | '标红' | '荧光笔' | '印章' | '打字界面' | '章节转场'>;
+export const EMPHASIS_STYLES: Array<'标红' | '荧光笔'>;
+
+export type ShotRole = '开场' | '痛点' | '方案' | '结尾';
+export type MotionKind = '大字回弹' | '标红' | '荧光笔' | '印章' | '打字界面' | '章节转场';
+export type EmphasisStyle = '标红' | '荧光笔';
+export type ScriptEmphasis = {text: string; style: EmphasisStyle};
+export type ScriptShot = {
+  id: string;
+  text: string;
+  role: ShotRole;
+  emphasis: ScriptEmphasis[];
+  assetId: string | null;
+  match: {score: number; keywords: string[]} | null;
+  motions: MotionKind[];
+  note: string;
+  charRange: {start: number; end: number} | null;
+  wordRange: {start: number; end: number} | null;
+  timeRange: {startMs: number; endMs: number} | null;
+};
+export type ScriptWord = {text: string; startMs: number | null; endMs: number | null};
+export type ScriptStoryboard = {
+  version: 1;
+  kind: 'script-storyboard';
+  source: 'script' | 'transcript';
+  sourceText: string;
+  words: ScriptWord[];
+  shots: ScriptShot[];
+  updatedAt?: string;
+};
+export type StoryboardEdit = {ok: true; storyboard: ScriptStoryboard} | {ok: false; error: string};
+export type CaptionLike = {startMs?: number; words?: Array<{text?: string; startMs?: number; endMs?: number}>};
+
+export function splitSentences(sourceText: string): Array<{text: string; start: number; end: number}>;
+export function suggestRole(index: number, total: number, text: string): ShotRole;
+export function suggestEmphasis(text: string, assets?: Array<{deprecated?: boolean; keywords?: string[]; title?: string}>): ScriptEmphasis[];
+export function suggestMotions(shot: {role: ShotRole; emphasis: ScriptEmphasis[]; text: string}, previousRole: ShotRole | null): MotionKind[];
+export function scoreAsset(text: string, role: ShotRole, motions: MotionKind[], asset: {deprecated?: boolean; keywords?: string[]; title?: string; usages?: string[]; type?: string} | null): {score: number; keywords: string[]};
+export function matchShots<T extends {text: string; role: ShotRole; motions: MotionKind[]; assetId: string | null}>(shots: T[], assets: Array<{id: string; deprecated?: boolean; keywords?: string[]; title?: string; usages?: string[]; type?: string}>, options?: {onlyMissing?: boolean}): T[];
+export function draftScriptStoryboard(input?: {sourceText?: string; words?: ScriptWord[]; assets?: Array<{id: string; deprecated?: boolean; keywords?: string[]; title?: string; usages?: string[]; type?: string}>; source?: 'script' | 'transcript'}): ScriptStoryboard;
+export function captionsToDraftInput(captions: CaptionLike[] | undefined): {sourceText: string; words: ScriptWord[]; source: 'transcript'};
+export function validateScriptStoryboard(doc: unknown): {ok: boolean; issues: string[]};
+export function missingAssetShots(doc: ScriptStoryboard): Array<{shot: ScriptShot; index: number}>;
+export function rematchAssets(doc: ScriptStoryboard, assets: Array<{id: string; deprecated?: boolean; keywords?: string[]; title?: string; usages?: string[]; type?: string}>, options?: {onlyMissing?: boolean}): ScriptStoryboard;
+export function updateShot(doc: ScriptStoryboard, id: string, patch: Partial<Pick<ScriptShot, 'text' | 'role' | 'emphasis' | 'motions' | 'note' | 'assetId'>>): StoryboardEdit;
+export function addShot(doc: ScriptStoryboard, afterId?: string | null): StoryboardEdit;
+export function removeShot(doc: ScriptStoryboard, id: string): StoryboardEdit;
+export function splitShot(doc: ScriptStoryboard, id: string, at: number): StoryboardEdit;
+export function mergeShots(doc: ScriptStoryboard, id: string): StoryboardEdit;

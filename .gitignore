@@ -43,6 +43,7 @@ inspection/
 .auto-jobs/
 
 .proofread.json
+.saymivo.json
 
 # Local reference material and private validation notes
 screenshots/

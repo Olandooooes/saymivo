@@ -1,0 +1,171 @@
+.wb-page,
+.wb-overlay {
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
+  --wb-bg: #111411;
+  --wb-panel: #1b2118;
+  --wb-line: #333d2b;
+  --wb-text: #e7eddf;
+  --wb-muted: #8e9b82;
+  --wb-lime: #d8f99a;
+  --wb-ink: #172114;
+  --wb-warn: #e7b2a8;
+  color: var(--wb-text);
+  background: var(--wb-bg);
+  font-size: 14px;
+}
+.wb-page { min-height: 100vh; }
+.wb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  overflow: auto;
+}
+.wb-top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--wb-line);
+  background: #151915;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.wb-top h1 { font-size: 22px; margin: 0; font-weight: 650; }
+.wb-kicker { margin: 0 0 2px; color: #a7bd8d; font-size: 11px; letter-spacing: .14em; }
+.wb-top p { margin: 0; color: var(--wb-muted); font-size: 12px; }
+.wb-top .wb-path { margin-left: auto; max-width: 46%; text-align: right; overflow-wrap: anywhere; }
+.wb-back, .wb-chip, .wb-text-btn, .wb-primary, .wb-danger {
+  border: 1px solid var(--wb-line);
+  background: #20281c;
+  color: var(--wb-text);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+.wb-back:hover, .wb-chip:hover, .wb-text-btn:hover { border-color: #5d734c; }
+.wb-chip[aria-pressed="true"], .wb-primary {
+  background: var(--wb-lime);
+  color: var(--wb-ink);
+  border-color: transparent;
+  font-weight: 700;
+}
+.wb-danger { color: var(--wb-warn); }
+.wb-body { padding: 22px 28px 48px; max-width: 1440px; }
+.wb-flow { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.wb-flow span { font-size: 12px; color: var(--wb-muted); border: 1px solid var(--wb-line); border-radius: 999px; padding: 4px 10px; }
+.wb-flow .is-on { color: var(--wb-ink); background: var(--wb-lime); border-color: transparent; font-weight: 700; }
+.wb-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.wb-filters input, .wb-filters select, .wb-shot input, .wb-shot select, .wb-shot textarea, .wb-script textarea {
+  background: #10170e;
+  color: var(--wb-text);
+  border: 1px solid #404d34;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+}
+.wb-filters input[type="search"] { min-width: 240px; }
+.wb-check { display: flex; gap: 6px; align-items: center; color: var(--wb-muted); font-size: 13px; }
+.wb-note, .wb-empty { color: var(--wb-muted); line-height: 1.7; }
+.wb-empty {
+  border: 1px dashed #536246;
+  border-radius: 14px;
+  padding: 28px;
+  background: #171d15;
+  max-width: 760px;
+}
+.wb-empty h2 { color: var(--wb-text); margin: 0 0 8px; font-size: 20px; }
+.wb-empty code, .wb-note code { color: var(--wb-lime); }
+.wb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.wb-card {
+  display: block;
+  text-align: left;
+  background: var(--wb-panel);
+  border: 1px solid var(--wb-line);
+  border-radius: 12px;
+  overflow: hidden;
+  color: inherit;
+  padding: 0;
+  width: 100%;
+}
+.wb-card.is-open { border-color: #8eae6d; }
+.wb-thumb {
+  aspect-ratio: 4 / 3;
+  background: #f7f2ea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wb-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.wb-thumb span { color: #6d6258; font-size: 13px; }
+.wb-card-body { padding: 10px 12px 12px; }
+.wb-card-body h3 { margin: 0 0 6px; font-size: 15px; }
+.wb-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.wb-meta i, .wb-flag {
+  font-style: normal;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #283322;
+  color: #c9deaf;
+}
+.wb-flag.warn { background: #4d211c; color: var(--wb-warn); }
+.wb-card-body p { margin: 0; color: var(--wb-muted); font-size: 12px; line-height: 1.55; }
+.wb-detail { margin-top: 8px; font-size: 12px; color: #c5d2bb; white-space: pre-wrap; }
+.wb-script { display: grid; gap: 8px; margin-bottom: 14px; }
+.wb-script textarea { width: 100%; min-height: 88px; resize: vertical; }
+.wb-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wb-status { color: var(--wb-lime); font-size: 12px; }
+.wb-error { color: var(--wb-warn); font-size: 12px; }
+.wb-missing {
+  border: 1px solid #8a4d3a;
+  background: #2a1c18;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+.wb-missing button { color: var(--wb-warn); background: none; border: 0; padding: 0 4px; text-decoration: underline; }
+.wb-scroll { overflow-x: auto; }
+.wb-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; min-width: 1180px; }
+.wb-table th { text-align: left; font-size: 12px; color: var(--wb-muted); font-weight: 600; padding: 0 8px; }
+.wb-table td { background: var(--wb-panel); vertical-align: top; padding: 8px; border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
+.wb-table td:first-child { border-left: 1px solid var(--wb-line); border-radius: 10px 0 0 10px; }
+.wb-table td:last-child { border-right: 1px solid var(--wb-line); border-radius: 0 10px 10px 0; }
+.wb-table tr.missing td { background: #241c18; }
+.wb-table tr.missing td:first-child { border-left-color: #a85b45; }
+.wb-shot textarea { width: 100%; min-height: 84px; resize: vertical; }
+.wb-shot select, .wb-shot input[type="text"] { width: 100%; }
+.wb-emphasis { display: grid; gap: 6px; }
+.wb-emphasis div, .wb-motions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.wb-motions label { font-size: 12px; display: flex; gap: 4px; align-items: center; }
+.wb-asset { display: grid; gap: 6px; justify-items: start; }
+.wb-asset img { width: 96px; height: 72px; object-fit: contain; background: #f7f2ea; border-radius: 6px; }
+.wb-ops { display: grid; gap: 6px; }
+.wb-ops button { white-space: nowrap; }
+.wb-range { display: block; margin-top: 6px; color: var(--wb-muted); font-size: 11px; }
+.wb-modal {
+  position: fixed;
+  inset: 0;
+  background: #050905cc;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 20px;
+  z-index: 3;
+}
+.wb-modal section {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  background: #1b2218;
+  border: 1px solid #46533b;
+  border-radius: 16px;
+  padding: 18px;
+}
+.wb-modal h2 { margin: 0 0 12px; }
+@media (max-width: 800px) {
+  .wb-top { flex-wrap: wrap; }
+  .wb-top .wb-path { margin-left: 0; max-width: none; text-align: left; }
+  .wb-body { padding: 16px; }
+}

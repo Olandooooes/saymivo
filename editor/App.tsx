@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {useEditor} from './store';
 import {Editor} from './Editor';
 import {Start, type ProjectMeta, type ManualProjectSettings} from './Start';
+import {AssetLibraryPage} from './AssetLibraryPage';
 import {displayFontConfig} from '../src/display-fonts.mjs';
 import {validEmphasisTheme, type EmphasisTheme} from '../src/emphasis-theme.mjs';
 
@@ -11,7 +12,8 @@ const META0 = {durationInFrames: 1, fps: 30, width: 1080, height: 1920};
 // Opening or creating a project switches to the editor.
 export const App: React.FC = () => {
   const {init, setProjectInfo} = useEditor();
-  const [view, setView] = useState<'start' | 'editor'>('start');
+  const [view, setView] = useState<'start' | 'editor' | 'library'>('start');
+  const [libraryReturn, setLibraryReturn] = useState<'start' | 'editor'>('start');
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
 
   const refresh = () =>
@@ -57,6 +59,8 @@ export const App: React.FC = () => {
     setView('start');
   };
 
-  if (view === 'start') return <Start projects={projects} onNew={newProject} onOpen={openProject} onRefresh={refresh} onDemo={async () => { const res = await fetch('/api/demo', {method: 'POST'}); const data = await res.json(); if (res.ok) openProject(data.id); else alert(data.error || '演示工程创建失败'); }} />;
-  return <Editor onBackToStart={backToStart} />;
+  const openLibrary = (from: 'start' | 'editor') => { setLibraryReturn(from); setView('library'); };
+  if (view === 'library') return <AssetLibraryPage onBack={() => setView(libraryReturn)} />;
+  if (view === 'start') return <Start projects={projects} onNew={newProject} onOpen={openProject} onRefresh={refresh} onOpenLibrary={() => openLibrary('start')} onDemo={async () => { const res = await fetch('/api/demo', {method: 'POST'}); const data = await res.json(); if (res.ok) openProject(data.id); else alert(data.error || '演示工程创建失败'); }} />;
+  return <Editor onBackToStart={backToStart} onOpenLibrary={() => openLibrary('editor')} />;
 };

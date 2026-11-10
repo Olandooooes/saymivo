@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240">
+  <rect width="320" height="240" fill="#F7F2EA"/>
+  <rect x="70" y="70" width="120" height="36" rx="8" fill="#C9B3A8" stroke="#2B2F36" stroke-width="3"/><rect x="88" y="86" width="120" height="36" rx="8" fill="#C9B3A8" stroke="#2B2F36" stroke-width="3"/><rect x="106" y="102" width="120" height="36" rx="8" fill="#C9B3A8" stroke="#2B2F36" stroke-width="3"/>
+  <text x="160" y="214" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#2B2F36">占位 · 痛点</text>
+</svg>

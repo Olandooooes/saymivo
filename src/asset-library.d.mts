@@ -1,0 +1,51 @@
+export const ASSET_TYPES: Array<'插画' | '贴纸印章' | '章节卡' | '界面'>;
+export const ASSET_USAGES: Array<'开场' | '痛点' | '方案' | '结尾'>;
+export const MEDIA_TYPES: Record<string, string>;
+
+export type AssetType = '插画' | '贴纸印章' | '章节卡' | '界面';
+export type LibraryAsset = {
+  id: string;
+  path: string;
+  thumb: string;
+  vectorPath: string;
+  category: string;
+  title: string;
+  keywords: string[];
+  color: string;
+  usages: string[];
+  source: string;
+  prompt: string;
+  width: number | null;
+  height: number | null;
+  type: AssetType;
+  deprecated: boolean;
+  note: string;
+};
+export type AssetLibrary = {
+  ok: boolean;
+  code?: string;
+  message?: string;
+  dir?: string;
+  indexPath?: string;
+  version: number | string | null;
+  style: Record<string, unknown> | null;
+  items: LibraryAsset[];
+  warnings: string[];
+  categories: string[];
+};
+export type AssetQuery = {q?: string; keyword?: string; category?: string; usage?: string; type?: string; includeDeprecated?: boolean; deprecated?: boolean | string};
+
+export function defaultAssetsDir(home?: string): string;
+export function expandHome(value: string, home?: string): string;
+export function assetsConfigPath(root: string): string;
+export function readAssetsConfig(root: string): {assetsDir?: string};
+export function resolveAssetsDir(options?: {root?: string; env?: NodeJS.ProcessEnv; home?: string}): {dir: string; source: 'env' | 'file' | 'default'};
+export function writeAssetsDir(root: string, assetsDir: string): void;
+export function assetTypeOf(rawType: unknown, category: string): AssetType;
+export function isDeprecated(value: unknown): boolean;
+export function normalizeAsset(raw: unknown, index?: number): {item: LibraryAsset | null; warning: string | null};
+export function normalizeLibrary(raw: unknown): AssetLibrary;
+export function missingLibraryMessage(dir: string): string;
+export function loadAssetLibrary(dir: string): AssetLibrary;
+export function filterAssets(items: LibraryAsset[], query?: AssetQuery): LibraryAsset[];
+export function safeAssetFile(rootDir: string, relativePath: string): string | null;

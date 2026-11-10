@@ -1,6 +1,7 @@
 import {regenerateCaptions} from '../src/regenerate-captions.mjs';
 import {PauseReviewDialog} from './PauseReviewDialog';
 import {FineCutReview} from './FineCutReview';
+import {ScriptStoryboardPage} from './ScriptStoryboardPage';
 import type {AutocutPlan} from '../src/apply-autocut-project.mjs';
 import {validateStoryboard} from '../src/storyboard.mjs';
 import {preExportAudit, type PreExportAdvisory} from '../src/pre-export-audit.mjs';
@@ -77,13 +78,14 @@ function pollJob(
 const META_RELOAD = {durationInFrames: 1, fps: 30, width: 1080, height: 1920};
 const PREVIEW_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) => {
+export const Editor: React.FC<{onBackToStart: () => void; onOpenLibrary?: () => void}> = ({onBackToStart, onOpenLibrary}) => {
   const [assetsOpen,setAssetsOpen]=useState(false);
   const [presentationOpen,setPresentationOpen]=useState(false);
   const [motionOpen,setMotionOpen]=useState(false);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [retakeOpen,setRetakeOpen]=useState(false);
   const [motionLibraryOpen,setMotionLibraryOpen]=useState(false);
+  const [storyboardOpen,setStoryboardOpen]=useState(false);
   const {
     meta, projectId, projectName, clips, music, captions, brolls, presentation, accentColor, selectedId, currentFrame, past, future,
     brollAssets, dupSuggestion, selectedClipId, select, selectClip, setCurrentFrame, setTopPct, setCaptionScale, setBrollScale, setKeyframe, removeKeyframe, setCaptions, setBrolls, setClipOrder, applyAutocut, applyFineCut, removeClips, setDupSuggestion, setProjectName, pushHistory, undo, redo,
@@ -627,7 +629,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
         </div>
       </header>
 
-      <div className="studio-help"><button className="asset-toggle" onClick={()=>setAssetsOpen(v=>!v)}>▦ 素材库</button><button onClick={()=>setPresentationOpen(true)}>▣ 知识讲解模板</button><button onClick={()=>setMotionOpen(true)}>✦ 内容动效 / 导入字幕</button><button onClick={()=>setSettingsOpen(true)}>⚙ 服务配置</button><span>先识别字幕 → 保护语音粗剪 → 编排动效 → 导出 · 本机自动保存</span></div>
+      <div className="studio-help"><button className="asset-toggle" onClick={()=>setAssetsOpen(v=>!v)}>▦ 素材库</button><button type="button" onClick={()=>{playerRef.current?.pause();setStoryboardOpen(true);}}>▤ 分镜表</button><button type="button" onClick={()=>{playerRef.current?.pause();onOpenLibrary?.();}}>▢ 白板素材</button><button onClick={()=>setPresentationOpen(true)}>▣ 知识讲解模板</button><button onClick={()=>setMotionOpen(true)}>✦ 内容动效 / 导入字幕</button><button onClick={()=>setSettingsOpen(true)}>⚙ 服务配置</button><span>稿子 → 分镜 → 备素材 → 精剪 → 动效对齐 → 预览 → 导出 · 本机自动保存</span></div>
       <ScreenCapture/>
       {audit && <details className="px-4 py-2 border-b border-outline-variant text-body-sm" open>
         <summary>成片检查：{audit.length ? `${audit.length} 处待复核` : '暂未发现时间空窗或重复句等提示'}</summary>
@@ -643,6 +645,7 @@ export const Editor: React.FC<{onBackToStart: () => void}> = ({onBackToStart}) =
       {settingsOpen&&<Settings onClose={()=>setSettingsOpen(false)}/>}
       {motionLibraryOpen&&<MotionLibrary onClose={()=>setMotionLibraryOpen(false)}/>}
       {fineCutClip&&<FineCutReview clip={fineCutClip} captions={captions} onPause={()=>playerRef.current?.pause()} onClose={()=>setFineCutClip(null)} onApply={result=>{applyFineCut(result);setFineCutClip(null);notify('精剪已放上时间线，可一次撤销恢复。','ok');}}/>}
+      {storyboardOpen&&<ScriptStoryboardPage projectId={projectId} captions={captions} onClose={()=>setStoryboardOpen(false)}/>}
       {pauseReview&&<PauseReviewDialog clips={pauseReview.clips} plan={pauseReview.plan} onPause={()=>playerRef.current?.pause()} onClose={()=>setPauseReview(null)} onApply={plan=>{
         const now=useEditor.getState();
         if(JSON.stringify({projectId:now.projectId,clips:now.clips})!==pauseReview.signature)throw Error('分析后时间线已改变，请关闭并重新分析。');

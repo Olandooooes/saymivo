@@ -25,6 +25,7 @@ import {createExportAudioFinalizer,finishRenderedExportAudio} from './export-aud
 //   render     — export the MultiClip composition to mp4 (job)
 //   health     — environment checks for the Start screen (ffmpeg, WhisperX, keys)
 import {studioRoute} from './studio-routes.mjs';
+import {isProjectDocument,removeScriptStoryboard,whiteboardRoute} from './whiteboard-routes.mjs';
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import fs from 'node:fs';
@@ -163,6 +164,7 @@ const dynamicMattes=createDynamicMatteAssets({ROOT,PUBLIC,json,inspectSource:src
 const dynamicAudio=createDynamicAudioRoute({ROOT,PUBLIC,json});
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (await whiteboardRoute({req,res,url,ROOT,PUBLIC,PROJECTS_DIR,json,body})) return;
   if (await dynamicAssets.route(req,res,url)) return;
   if (await dynamicMattes.route(req,res,url)) return;
   if (await dynamicAudio.route(req,res,url)) return;
@@ -182,7 +184,7 @@ const server = createServer(async (req, res) => {
   // ---- multi-project library ----
   if (req.method === 'GET' && url.pathname === '/api/projects') {
     const list = fs.readdirSync(PROJECTS_DIR)
-      .filter((f) => f.endsWith('.json'))
+      .filter(isProjectDocument)
       .map((f) => {
         try {
           const p = JSON.parse(fs.readFileSync(path.join(PROJECTS_DIR, f), 'utf8'));
@@ -232,6 +234,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'DELETE') {
       fs.rmSync(file, {force: true});
+      removeScriptStoryboard(PROJECTS_DIR, id);
       return json(res, 200, {ok: true});
     }
   }

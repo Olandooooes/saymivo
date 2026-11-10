@@ -1,4 +1,5 @@
 import {readProofreadSettings,parseGlossary} from './proofread.mjs';
+import {defaultAssetsDir,resolveAssetsDir,writeAssetsDir} from '../src/asset-library.mjs';
 import {gemini} from '../scripts/gemini.mjs';
 import fs from 'node:fs';import path from 'node:path';
 export async function studioRoute({req,res,url,ROOT,PUBLIC,PROJECTS_DIR,json,body,run,readEnvFile}){
@@ -12,8 +13,8 @@ export async function studioRoute({req,res,url,ROOT,PUBLIC,PROJECTS_DIR,json,bod
   }catch{json(res,500,{error:'AI 分析失败，请检查密钥与网络，或改用本地规则编排。'});}return true;
  }
  if(url.pathname==='/api/settings'){
-  const file=path.join(ROOT,'.env');if(req.method==='GET'){const env={...readEnvFile(),...process.env};json(res,200,{glossary:readProofreadSettings(ROOT).glossary??'',gemini:!!env.GEMINI_API_KEY,pexels:!!env.PEXELS_API_KEY,asr:fs.existsSync(path.join(ROOT,'.venv/bin/whisperx'))||fs.existsSync(path.join(ROOT,'.venv/bin/faster-whisper-ready'))});return true;}
-  if(req.method==='POST'){let data;try{data=JSON.parse(await body(req));}catch{json(res,400,{error:'配置格式错误'});return true;}if(data.glossary!==undefined){try{parseGlossary(data.glossary);}catch(e){json(res,400,{error:e.message});return true;}}const env=readEnvFile();for(const [k,v]of [['GEMINI_API_KEY',data.gemini],['PEXELS_API_KEY',data.pexels]]){if(v){if(typeof v!=='string'||/[\r\n]/.test(v)||v.length>500){json(res,400,{error:'密钥格式错误'});return true;}env[k]=v.trim();}}fs.writeFileSync(file,Object.entries(env).map(([k,v])=>`${k}=${v}`).join('\n')+'\n',{mode:0o600});fs.chmodSync(file,0o600);if(data.glossary!==undefined)fs.writeFileSync(path.join(ROOT,'.proofread.json'),JSON.stringify({glossary:data.glossary}),{mode:0o600});json(res,200,{ok:true});return true;}
+  const file=path.join(ROOT,'.env');if(req.method==='GET'){const env={...readEnvFile(),...process.env};const assets=resolveAssetsDir({root:ROOT});json(res,200,{glossary:readProofreadSettings(ROOT).glossary??'',gemini:!!env.GEMINI_API_KEY,pexels:!!env.PEXELS_API_KEY,asr:fs.existsSync(path.join(ROOT,'.venv/bin/whisperx'))||fs.existsSync(path.join(ROOT,'.venv/bin/faster-whisper-ready')),assetsDir:assets.dir,assetsDirSource:assets.source,assetsDirDefault:defaultAssetsDir()});return true;}
+  if(req.method==='POST'){let data;try{data=JSON.parse(await body(req));}catch{json(res,400,{error:'配置格式错误'});return true;}if(data.glossary!==undefined){try{parseGlossary(data.glossary);}catch(e){json(res,400,{error:e.message});return true;}}if(data.assetsDir!==undefined){try{writeAssetsDir(ROOT,data.assetsDir);}catch(e){json(res,400,{error:e.message});return true;}}const env=readEnvFile();for(const [k,v]of [['GEMINI_API_KEY',data.gemini],['PEXELS_API_KEY',data.pexels]]){if(v){if(typeof v!=='string'||/[\r\n]/.test(v)||v.length>500){json(res,400,{error:'密钥格式错误'});return true;}env[k]=v.trim();}}fs.writeFileSync(file,Object.entries(env).map(([k,v])=>`${k}=${v}`).join('\n')+'\n',{mode:0o600});fs.chmodSync(file,0o600);if(data.glossary!==undefined)fs.writeFileSync(path.join(ROOT,'.proofread.json'),JSON.stringify({glossary:data.glossary}),{mode:0o600});json(res,200,{ok:true});return true;}
  }
  if(url.pathname==='/api/demo'&&req.method==='POST'){
   const file=path.join(PUBLIC,'clips','studio-demo.mp4');fs.mkdirSync(path.dirname(file),{recursive:true});fs.mkdirSync(path.join(PUBLIC,'clips','thumbs'),{recursive:true});

@@ -24,6 +24,7 @@ const startStub = dataUrl('let props; export function Start(p){props=p;return nu
 const {currentProps} = await import(startStub);
 const {App} = await import(compile('../editor/App.tsx', {
   './store': storeUrl, './Start': startStub, './Editor': dataUrl('export function Editor(){return null;}'),
+  './AssetLibraryPage': dataUrl('export function AssetLibraryPage(){return null;}'),
 }));
 
 function savedPreferences(values) {
