@@ -127,7 +127,14 @@
 }
 .wb-missing button { color: var(--wb-warn); background: none; border: 0; padding: 0 4px; text-decoration: underline; }
 .wb-scroll { overflow-x: auto; }
-.wb-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; min-width: 1180px; }
+.wb-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; min-width: 1680px; }
+.wb-shot.copy-warn td:first-child { border-left-color: #c9a15b; }
+.wb-style { width: min(560px, 100%); max-height: calc(100vh - 96px); overflow: auto; background: #1b2218; border: 1px solid #46533b; border-radius: 16px; padding: 18px; }
+.wb-style h2 { margin: 0; }
+.wb-style dl { display: grid; gap: 10px; margin: 14px 0 0; }
+.wb-style div { display: grid; grid-template-columns: 88px 1fr; gap: 8px; }
+.wb-style dt { color: var(--wb-muted); }
+.wb-style dd { margin: 0; }
 .wb-table th { text-align: left; font-size: 12px; color: var(--wb-muted); font-weight: 600; padding: 0 8px; }
 .wb-table td { background: var(--wb-panel); vertical-align: top; padding: 8px; border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
 .wb-table td:first-child { border-left: 1px solid var(--wb-line); border-radius: 10px 0 0 10px; }

@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {filterAssets, loadAssetLibrary, resolveAssetsDir, safeAssetFile, MEDIA_TYPES} from '../src/asset-library.mjs';
-import {captionsToDraftInput, draftScriptStoryboard, validateScriptStoryboard} from '../src/script-storyboard.mjs';
+import {captionsToDraftInput, draftScriptStoryboard, upgradeScriptStoryboard, validateScriptStoryboard} from '../src/script-storyboard.mjs';
+import {readWhiteboardStyle} from '../src/whiteboard-style.mjs';
 
 export function scriptStoryboardPath(dir, id) {
   if (typeof id !== 'string' || !/^[\w-]+$/.test(id)) return null;
@@ -49,7 +50,7 @@ function libraryPayload(root, url) {
 function readSavedStoryboard(file) {
   if (!fs.existsSync(file)) return {ok: true, storyboard: null};
   try {
-    const storyboard = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const storyboard = upgradeScriptStoryboard(JSON.parse(fs.readFileSync(file, 'utf8')));
     const checked = validateScriptStoryboard(storyboard);
     if (!checked.ok) return {ok: false, code: 'invalid', message: '已保存的分镜读不出来', issues: checked.issues, storyboard: null};
     return {ok: true, storyboard};
@@ -59,6 +60,11 @@ function readSavedStoryboard(file) {
 }
 
 export async function whiteboardRoute({req, res, url, ROOT, PROJECTS_DIR, json, body}) {
+  if (url.pathname === '/api/whiteboard-style' && req.method === 'GET') {
+    const loaded = readWhiteboardStyle();
+    json(res, loaded.ok ? 200 : 500, loaded.ok ? {ok: true, style: loaded.style} : {ok: false, issues: loaded.issues});
+    return true;
+  }
   if (url.pathname === '/api/asset-library' && req.method === 'GET') {
     json(res, 200, libraryPayload(ROOT, url));
     return true;
@@ -109,7 +115,8 @@ export async function whiteboardRoute({req, res, url, ROOT, PROJECTS_DIR, json, 
       json(res, 400, {error: '分镜不是有效的 JSON'});
       return true;
     }
-    const checked = validateScriptStoryboard(incoming);
+    const checked = validateScriptStoryboard(upgradeScriptStoryboard(incoming));
+    incoming = checked.ok ? upgradeScriptStoryboard(incoming) : incoming;
     if (!checked.ok) {
       json(res, 400, {error: '分镜未通过校验', issues: checked.issues});
       return true;

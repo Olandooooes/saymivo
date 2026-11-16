@@ -2,14 +2,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://saymivo.local/schema/script-storyboard.schema.json",
   "title": "Saymivo script storyboard",
-  "description": "Shot plan saved next to a project as <projectId>.storyboard.json. timeRange stays null until phase 2 aligns motions to word timing. charRange indexes sourceText; wordRange indexes words.",
+  "description": "Shot plan saved next to a project as <projectId>.storyboard.json. Version 2 adds voiceSaid, pictureAdds and screenKeeps. Version 1 files are still accepted by the loader and upgraded on save. timeRange is null until alignment. charRange indexes sourceText; wordRange indexes words.",
   "type": "object",
-  "required": ["version", "kind", "source", "sourceText", "words", "shots"],
+  "required": ["version", "kind", "source", "sourceText", "words", "shots", "align"],
   "properties": {
-    "version": {"const": 1},
+    "version": {"enum": [1, 2]},
     "kind": {"const": "script-storyboard"},
     "source": {"enum": ["script", "transcript"]},
     "sourceText": {"type": "string"},
+    "align": {
+      "type": ["object", "null"],
+      "required": ["leadMs", "keepsKey", "clock"],
+      "properties": {
+        "leadMs": {"type": "number"},
+        "keepsKey": {"type": "string"},
+        "clock": {"enum": ["source", "timeline"]}
+      },
+      "additionalProperties": false
+    },
     "words": {
       "type": "array",
       "items": {
@@ -33,7 +43,7 @@
   "$defs": {
     "shot": {
       "type": "object",
-      "required": ["id", "text", "role", "emphasis", "assetId", "match", "motions", "note", "charRange", "wordRange", "timeRange"],
+      "required": ["id", "text", "role", "emphasis", "assetId", "match", "motions", "note", "charRange", "wordRange", "timeRange", "voiceSaid", "pictureAdds", "screenKeeps", "cues", "typing"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "text": {"type": "string"},
@@ -69,7 +79,7 @@
         "charRange": {"$ref": "#/$defs/range"},
         "wordRange": {"$ref": "#/$defs/range"},
         "timeRange": {
-          "description": "Reserved for phase 2. Drafts store null.",
+          "description": "Output timeline after fine-cut keeps are applied. Drafts store null.",
           "type": ["object", "null"],
           "required": ["startMs", "endMs"],
           "properties": {
@@ -77,6 +87,37 @@
             "endMs": {"type": "number"}
           },
           "additionalProperties": false
+        },
+        "voiceSaid": {"type": "string"},
+        "pictureAdds": {"type": "string"},
+        "screenKeeps": {"type": "string"},
+        "cues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["motion", "atMs", "leadMs", "word", "wordIndex"],
+            "properties": {
+              "motion": {"enum": ["大字回弹", "标红", "荧光笔", "印章", "打字界面", "章节转场"]},
+              "atMs": {"type": "number"},
+              "leadMs": {"type": "number"},
+              "word": {"type": ["string", "null"]},
+              "wordIndex": {"type": ["integer", "null"]}
+            },
+            "additionalProperties": false
+          }
+        },
+        "typing": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["text", "atMs"],
+            "properties": {
+              "text": {"type": "string"},
+              "atMs": {"type": "number"},
+              "wordIndex": {"type": "integer"}
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
