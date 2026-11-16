@@ -34,7 +34,7 @@
 | `local-wip-20261103` | 用户 Mac 本地工作区全部文件（380144f）+ 已合并的 P0（合并提交 `09c6861`） | **当前主线** |
 | `cursor/p1-plan-components-7f55` | P1，[PR #3](https://github.com/Olandooooes/saymivo/pull/3)，base = local-wip，最新 `2437829` | 开放，**未合并、最新提交未经原片验收** |
 | `cursor/storyboard-library-a23b` | 白板第一期：分镜表 + 素材库。[PR #5](https://github.com/Olandooooes/saymivo/pull/5)，base = local-wip | 开放，待合并。不包含 P1 的 `validatePlan` |
-| `cursor/whiteboard-align-a23b` | 白板第二期：按字对齐、分镜三列、风格和声音规范。base = 第一期分支 | 待合并 |
+| `cursor/whiteboard-align-a23b` | 白板第二期：按字对齐、分镜三列、风格和声音规范。[PR #6](https://github.com/Olandooooes/saymivo/pull/6)，base = 第一期分支 | 开放，待合并 |
 | `cursor/sync-local-koubo-667c` | PR #1，另一个 agent 的同步，与 local-wip 分叉 | 不要动 |
 
 用户 Mac 上的本地仓库：`/Users/lht/Borumi Projects/koubo-studio`，当前检出 `local-wip-20261103`。Mac 没有命令行 git 凭据，推送需通过云端 agent 或其它有 GitHub 权限的环境。用户已授权直接推送本项目到 GitHub。
@@ -58,7 +58,7 @@
 
 ## 4. 下一步（按顺序）
 
-**当前优先：** 白板第二期在 `cursor/whiteboard-align-a23b`，叠在第一期 [PR #5](https://github.com/Olandooooes/saymivo/pull/5) 上，等合并。不要从 `main` 开工。
+**当前优先：** 白板第二期 [PR #6](https://github.com/Olandooooes/saymivo/pull/6)（`cursor/whiteboard-align-a23b`），叠在第一期 [PR #5](https://github.com/Olandooooes/saymivo/pull/5) 上，等合并。不要从 `main` 开工。
 
 Mac 上接现有素材目录：
 
