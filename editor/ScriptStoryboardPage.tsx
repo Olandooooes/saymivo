@@ -11,13 +11,17 @@ import {
   missingAssetShots,
   rematchAssets,
   removeShot,
+  shotCopyIssues,
   splitShot,
+  storyboardCopyIssues,
   updateShot,
+  upgradeScriptStoryboard,
   validateScriptStoryboard,
   type MotionKind,
   type ScriptStoryboard,
   type ShotRole,
 } from '../src/script-storyboard.mjs';
+import {alignStoryboard, captionsDrifted} from '../src/whiteboard-align.mjs';
 import './whiteboard.css';
 
 type Asset = {
@@ -48,6 +52,8 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
   const [error, setError] = useState('');
   const [pickerId, setPickerId] = useState<string | null>(null);
   const [pickerQuery, setPickerQuery] = useState('');
+  const [style, setStyle] = useState<any>(null);
+  const [styleOpen, setStyleOpen] = useState(false);
   const textRefs = useRef(new Map<string, HTMLTextAreaElement>());
   const skipSave = useRef(true);
 
@@ -66,6 +72,14 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    fetch('/api/whiteboard-style').then((response) => response.json()).then((payload) => {
+      if (!cancelled && payload.ok) setStyle(payload.style);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (!projectId) {
       setReady(true);
       setStatus('进入项目后才能把分镜保存到工程里。');
@@ -78,8 +92,9 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
       .then((payload) => {
         if (cancelled) return;
         if (payload.storyboard) {
-          setDoc(payload.storyboard);
-          setSourceText(payload.storyboard.sourceText ?? '');
+          const upgraded = upgradeScriptStoryboard(payload.storyboard);
+          setDoc(upgraded);
+          setSourceText(upgraded.sourceText ?? '');
           setStatus('已读取保存的分镜');
         } else {
           setStatus(payload.message || '还没有分镜。贴上稿子，或从当前转写生成。');
@@ -133,6 +148,14 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
     setSourceText(next.sourceText);
     setError('');
   };
+  const alignNow = () => {
+    if (!doc || !style) return;
+    const input = captionsToDraftInput(captions);
+    const sameClock = input.sourceText === doc.sourceText && input.words.length > 0 && input.words.every((word) => Number.isFinite(word.startMs) && Number.isFinite(word.endMs));
+    const aligned = alignStoryboard(sameClock ? {...doc, words: input.words} : doc, {keeps: null, style});
+    setDoc(aligned.storyboard);
+    setError(aligned.issues[0]?.message ?? '');
+  };
   const reload = async () => {
     if (!projectId) return;
     const response = await fetch('/api/projects/' + projectId + '/storyboard');
@@ -142,12 +165,15 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
       return;
     }
     skipSave.current = true;
-    setDoc(payload.storyboard);
-    setSourceText(payload.storyboard.sourceText ?? '');
+    const upgraded = upgradeScriptStoryboard(payload.storyboard);
+    setDoc(upgraded);
+    setSourceText(upgraded.sourceText ?? '');
     setError('');
     setStatus('已重新读取');
   };
   const missing = doc ? missingAssetShots(doc).filter(({shot}) => !shot.assetId || (assets.length > 0 && !known.has(shot.assetId))) : [];
+  const copyIssues = doc ? storyboardCopyIssues(doc) : [];
+  const drifted = doc ? captionsDrifted(doc, captions) : false;
   const pickerShot = doc?.shots.find((shot) => shot.id === pickerId);
   const pickerAssets = usable.filter((asset) => {
     const needle = pickerQuery.trim().toLowerCase();
@@ -163,13 +189,14 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
           <p className="wb-kicker">转写之后</p>
           <h1>分镜表</h1>
         </div>
+        <button type="button" className="wb-back" onClick={() => setStyleOpen(true)}>风格规范</button>
         <p className="wb-path">{doc ? `${doc.shots.length} 镜 · 缺素材 ${missing.length} 镜` : '尚未生成'}<br />{status}</p>
       </header>
       <div className="wb-body">
         <div className="wb-flow" aria-label="工作流">
           {['稿子', '分镜', '备素材', '精剪', '动效对齐', '预览', '导出'].map((step) => <span key={step} className={step === '分镜' ? 'is-on' : ''}>{step}</span>)}
         </div>
-        <p className="wb-note">按句子拆开。配图留空就是缺素材。动效先记在镜头上，按字对齐放到下一期；字范围和词范围会先留下来。</p>
+        <p className="wb-note">按句子拆开。配图留空就是缺素材。三列用来分开「口播已经说了什么」和「画面要补的、要留下的」。按字对齐用精剪后的词时间，标红和荧光笔卡在词的起点。</p>
         {libraryNote && <p className="wb-missing" role="status">{libraryNote}</p>}
         <div className="wb-script">
           <label>稿子
@@ -179,11 +206,18 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
             <button type="button" className="wb-primary" onClick={() => generate('script')} disabled={!libraryReady}>按稿子生成</button>
             <button type="button" onClick={() => generate('transcript')} disabled={!libraryReady || !captions.length}>从转写生成</button>
             <button type="button" disabled={!doc} onClick={() => doc && setDoc(rematchAssets(doc, usable, {onlyMissing: true}))}>只补缺素材</button>
+            <button type="button" disabled={!doc || !style} onClick={alignNow}>按精剪后的字时间对齐</button>
             <button type="button" onClick={() => void reload()} disabled={!projectId}>重新读取</button>
             <span className="wb-status" role="status">{status}</span>
             {error && <span className="wb-error" role="alert">{error}</span>}
           </div>
         </div>
+        {drifted && <p className="wb-missing" role="status">转写时间已经变了。点「按精剪后的字时间对齐」会按新的保留段重算。</p>}
+        {doc && copyIssues.length > 0 && (
+          <div className="wb-missing" role="status" aria-label="分镜文案检查">
+            {copyIssues.map((issue) => <button type="button" key={issue.shotId + issue.code} onClick={() => document.getElementById('shot-' + issue.shotId)?.scrollIntoView({block: 'center'})}>第 {issue.index + 1} 镜：{issue.message}</button>)}
+          </div>
+        )}
         {doc && (
           <div className="wb-missing" role="status" aria-label="缺素材汇总">
             {missing.length === 0
@@ -196,17 +230,21 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
             <table className="wb-table">
               <thead>
                 <tr>
-                  <th>#</th><th>原文</th><th>段落</th><th>重点词</th><th>配图</th><th>动效</th><th>备注</th><th>操作</th>
+                  <th>#</th><th>原文</th><th>声音已经说了什么</th><th>画面要补充什么</th><th>屏幕上要留下什么</th><th>段落</th><th>重点词</th><th>配图</th><th>动效</th><th>备注</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {doc.shots.map((shot, index) => {
                   const asset = shot.assetId ? known.get(shot.assetId) : undefined;
                   const gap = !shot.assetId || (assets.length > 0 && !known.has(shot.assetId));
+                  const copy = shotCopyIssues(shot);
                   return (
-                    <tr key={shot.id} id={'shot-' + shot.id} className={'wb-shot' + (gap ? ' missing' : '')}>
-                      <td>{String(index + 1).padStart(2, '0')}{shot.charRange && <span className="wb-range">字 {shot.charRange.start}–{shot.charRange.end}</span>}{shot.wordRange && <span className="wb-range">词 {shot.wordRange.start}–{shot.wordRange.end}</span>}</td>
+                    <tr key={shot.id} id={'shot-' + shot.id} className={'wb-shot' + (gap ? ' missing' : '') + (copy.length ? ' copy-warn' : '')}>
+                      <td>{String(index + 1).padStart(2, '0')}{shot.charRange && <span className="wb-range">字 {shot.charRange.start}–{shot.charRange.end}</span>}{shot.wordRange && <span className="wb-range">词 {shot.wordRange.start}–{shot.wordRange.end}</span>}{shot.timeRange && <span className="wb-range">时间 {shot.timeRange.startMs}–{shot.timeRange.endMs}ms</span>}{shot.cues[0] && <span className="wb-range">{shot.cues[0].motion} {shot.cues[0].atMs}ms</span>}</td>
                       <td><textarea aria-label={'第' + (index + 1) + '镜原文'} ref={(node) => { if (node) textRefs.current.set(shot.id, node); else textRefs.current.delete(shot.id); }} value={shot.text} onChange={(event) => apply(updateShot(doc, shot.id, {text: event.target.value}))} /></td>
+                      <td><textarea aria-label={'第' + (index + 1) + '镜声音已经说了什么'} value={shot.voiceSaid} onChange={(event) => apply(updateShot(doc, shot.id, {voiceSaid: event.target.value}))} /></td>
+                      <td><textarea aria-label={'第' + (index + 1) + '镜画面要补充什么'} value={shot.pictureAdds} onChange={(event) => apply(updateShot(doc, shot.id, {pictureAdds: event.target.value}))} /></td>
+                      <td><textarea aria-label={'第' + (index + 1) + '镜屏幕上要留下什么'} value={shot.screenKeeps} onChange={(event) => apply(updateShot(doc, shot.id, {screenKeeps: event.target.value}))} />{copy.map((issue) => <p key={issue.code} className="wb-error">{issue.message}</p>)}</td>
                       <td>
                         <select aria-label={'第' + (index + 1) + '镜段落'} value={shot.role} onChange={(event) => apply(updateShot(doc, shot.id, {role: event.target.value as ShotRole}))}>
                           {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
@@ -261,6 +299,27 @@ export const ScriptStoryboardPage: React.FC<{projectId: string | null; captions:
           </div>
         )}
       </div>
+      {styleOpen && style && (
+        <div className="wb-modal" onClick={() => setStyleOpen(false)}>
+          <aside className="wb-style" role="dialog" aria-modal="true" aria-label="白板风格规范" onClick={(event) => event.stopPropagation()}>
+            <div className="wb-actions"><h2>白板风格规范</h2><button type="button" className="wb-text-btn" onClick={() => setStyleOpen(false)}>关闭</button></div>
+            <p className="wb-note">只读。数值来自 src/whiteboard-style.json，说明在 docs/DESIGN-whiteboard.md。渲染和声音都用这一份。</p>
+            <dl>
+              <div><dt>画布</dt><dd>{style.canvas.width}×{style.canvas.height} {style.canvas.background}</dd></div>
+              <div><dt>点阵</dt><dd>间距 {style.canvas.grid.spacing} · 半径 {style.canvas.grid.dotRadius} · {style.canvas.grid.color} · 不透明度 {style.canvas.grid.opacity}</dd></div>
+              <div><dt>颜色</dt><dd>正文 {style.color.ink} · 辅助 {style.color.support} · 标红 {style.color.emphasis} · 荧光笔 {style.color.highlighter}</dd></div>
+              <div><dt>字号</dt><dd>大字 {style.type.roles.display.size} · 标题 {style.type.roles.title.size} · 正文 {style.type.roles.body.size} · 注释 {style.type.roles.note.size} · 行高 {style.type.lineHeight} · 行宽 {style.type.maxLineWidth}</dd></div>
+              <div><dt>人物小窗</dt><dd>左下角直径 {style.pip.diameter} · 描边 {style.pip.stroke.width}px {style.pip.stroke.color} · 保留原视频背景</dd></div>
+              <div><dt>提前量</dt><dd>{style.align.leadMs}ms（{style.align.leadMinMs} 到 {style.align.leadMaxMs}）· 卡在词上：{style.align.onsetMotions.join('、')}</dd></div>
+              <div><dt>人声</dt><dd>{style.audio.voice.integratedLufs} LUFS · 真峰值 {style.audio.voice.truePeakDbtp} dBTP</dd></div>
+              <div><dt>音乐</dt><dd>{style.audio.music.enabled ? '开' : '默认关'} · {style.audio.music.gainDb} dB · 有人声再 {style.audio.music.duckDb} dB</dd></div>
+              <div><dt>音效</dt><dd>{style.audio.sfx.dir}/ · 上限 {style.audio.sfx.gainDbMax} dB</dd></div>
+              {Object.entries(style.motion).map(([name, motion]) => <div key={name}><dt>{name}</dt><dd>{(motion as {durationMs: number}).durationMs}ms · {(motion as {easing: {type: string}}).easing.type}</dd></div>)}
+              {Object.entries(style.audio.sfx.slots).map(([name, file]) => <div key={name}><dt>{name}</dt><dd>{String(file)}</dd></div>)}
+            </dl>
+          </aside>
+        </div>
+      )}
       {pickerShot && doc && (
         <div className="wb-modal" onClick={() => setPickerId(null)}>
           <section role="dialog" aria-modal="true" aria-label="选择配图" onClick={(event) => event.stopPropagation()}>

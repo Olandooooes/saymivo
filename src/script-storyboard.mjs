@@ -1,10 +1,41 @@
 // Script-level shot list (稿子 → 分镜). This is not the visual scene storyboard
 // in storyboard.mjs. Matching is local keyword overlap: no paid API, no
-// script-specific copy. charRange / wordRange / timeRange are reserved for
-// phase-2 alignment; drafts leave timeRange null.
+// script-specific copy. Version 2 adds the three planning columns. timeRange
+// stays empty until alignStoryboard fills it from the fine-cut clock.
 export const ROLES = ['开场', '痛点', '方案', '结尾'];
 export const MOTIONS = ['大字回弹', '标红', '荧光笔', '印章', '打字界面', '章节转场'];
 export const EMPHASIS_STYLES = ['标红', '荧光笔'];
+const PICTURE_BY_ROLE = {
+  开场: '用一个口播里没有写出来的画面把话题摊开',
+  痛点: '补出这句话没说完的麻烦，不要把原句再写一遍',
+  方案: '补一个步骤、界面或结果，口播里没出现的那一层',
+  结尾: '留下一个收束，而不是把最后一句再贴一遍',
+};
+
+export function defaultShotCopy(shot = {}) {
+  const emphasis = (shot.emphasis ?? []).map((item) => item?.text).filter((text) => typeof text === 'string' && text.trim());
+  return {
+    voiceSaid: typeof shot.text === 'string' ? shot.text : '',
+    pictureAdds: PICTURE_BY_ROLE[shot.role] ?? PICTURE_BY_ROLE.方案,
+    screenKeeps: emphasis.join(' · '),
+  };
+}
+
+function withCopy(shot) {
+  const copy = defaultShotCopy(shot);
+  return {
+    ...shot,
+    voiceSaid: typeof shot.voiceSaid === 'string' ? shot.voiceSaid : copy.voiceSaid,
+    pictureAdds: typeof shot.pictureAdds === 'string' ? shot.pictureAdds : copy.pictureAdds,
+    screenKeeps: typeof shot.screenKeeps === 'string' ? shot.screenKeeps : copy.screenKeeps,
+    cues: Array.isArray(shot.cues) ? shot.cues : [],
+    typing: Array.isArray(shot.typing) ? shot.typing : null,
+  };
+}
+
+function freshCopy(shot) {
+  return {...withCopy({...shot, voiceSaid: undefined, pictureAdds: undefined, screenKeeps: undefined}), ...defaultShotCopy(shot), cues: [], typing: null, timeRange: null};
+}
 const REUSE_PENALTY = 3;
 const ENDING_MARK = /总结|最后|到这里|下期|收尾|结尾/;
 const PAIN_MARK = /痛点|麻烦|问题是|还是得|误区|难在|卡住|不够|焦虑/;
@@ -138,7 +169,7 @@ export function draftScriptStoryboard({sourceText, words = [], assets = [], sour
   const useWords = usableWords.length > 0 && usableWords.map((word) => word.text).join('') === text;
   const sentences = splitSentences(text);
   const draftWords = useWords ? usableWords : [];
-  const base = {version: 1, kind: 'script-storyboard', source: source === 'transcript' || source === 'script' ? source : (useWords ? 'transcript' : 'script'), sourceText: text, words: draftWords, shots: []};
+  const base = {version: 2, kind: 'script-storyboard', source: source === 'transcript' || source === 'script' ? source : (useWords ? 'transcript' : 'script'), sourceText: text, words: draftWords, align: null, shots: []};
   let shots = sentences.map((sentence, index) => ({
     id: `s${index + 1}`,
     text: sentence.text,
@@ -151,11 +182,18 @@ export function draftScriptStoryboard({sourceText, words = [], assets = [], sour
     charRange: {start: sentence.start, end: sentence.end},
     wordRange: null,
     timeRange: null,
+    cues: [],
+    typing: null,
   }));
   shots = shots.map((shot, index) => ({...shot, motions: suggestMotions(shot, index > 0 ? shots[index - 1].role : null)}));
   shots = matchShots(shots, assets);
-  shots = shots.map((shot) => ({...shot, wordRange: shot.charRange ? wordRangesFromChars({...base, shots}, shot.charRange.start, shot.charRange.end) : null}));
+  shots = shots.map((shot) => withCopy({...shot, wordRange: shot.charRange ? wordRangesFromChars({...base, shots}, shot.charRange.start, shot.charRange.end) : null}));
   return {...base, shots};
+}
+
+export function upgradeScriptStoryboard(doc) {
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return doc;
+  return {...doc, version: 2, align: doc.align ?? null, shots: (doc.shots ?? []).map((shot) => withCopy(shot ?? {}))};
 }
 
 export function captionsToDraftInput(captions) {
@@ -177,7 +215,7 @@ function validRange(range, length) {
 export function validateScriptStoryboard(doc) {
   const issues = [];
   if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return {ok: false, issues: ['分镜必须是对象']};
-  if (doc.version !== 1) issues.push('分镜版本必须是 1');
+  if (doc.version !== 1 && doc.version !== 2) issues.push('分镜版本必须是 1 或 2');
   if (doc.kind !== 'script-storyboard') issues.push('kind 必须是 script-storyboard');
   if (doc.source !== 'script' && doc.source !== 'transcript') issues.push('source 无效');
   if (typeof doc.sourceText !== 'string') issues.push('sourceText 必须是字符串');
@@ -207,8 +245,71 @@ export function validateScriptStoryboard(doc) {
       const time = shot.timeRange;
       if (!time || !Number.isFinite(time.startMs) || !Number.isFinite(time.endMs) || time.endMs < time.startMs) issues.push(`${shot.id || '镜头'} 的时间范围无效`);
     }
+    if (doc.version === 2) {
+      for (const key of ['voiceSaid', 'pictureAdds', 'screenKeeps']) {
+        if (typeof shot[key] !== 'string') issues.push(`${shot.id || '镜头'} 的${key}必须是字符串`);
+        else if (shot[key].length > 500) issues.push(`${shot.id || '镜头'} 的说明过长`);
+      }
+      if (!Array.isArray(shot.cues) || shot.cues.some((cue) => !cue || !MOTIONS.includes(cue.motion) || !Number.isFinite(cue.atMs) || !Number.isFinite(cue.leadMs) || (cue.word !== null && typeof cue.word !== 'string') || (cue.wordIndex !== null && !Number.isInteger(cue.wordIndex)))) issues.push(`${shot.id || '镜头'} 的动效触发点无效`);
+      if (shot.typing !== null && (!Array.isArray(shot.typing) || shot.typing.some((step) => !step || typeof step.text !== 'string' || !Number.isFinite(step.atMs)))) issues.push(`${shot.id || '镜头'} 的打字进度无效`);
+    }
+  }
+  if (doc.version === 2 && doc.align != null) {
+    const align = doc.align;
+    if (!align || !Number.isFinite(align.leadMs) || typeof align.keepsKey !== 'string' || (align.clock !== 'source' && align.clock !== 'timeline')) issues.push('对齐记录无效');
   }
   return {ok: issues.length === 0, issues};
+}
+
+function compactCopy(value) {
+  return String(value ?? '').replace(/[\s，,。！？!?、；;：:「」『』“”"'（）()\n]/g, '');
+}
+
+function copyCoverage(piece, spoken) {
+  const left = compactCopy(piece);
+  const right = compactCopy(spoken);
+  if (!left || !right) return {piece: 0, spoken: 0, length: left.length};
+  const counts = new Map();
+  for (const char of right) counts.set(char, (counts.get(char) ?? 0) + 1);
+  let hit = 0;
+  for (const char of left) {
+    const leftCount = counts.get(char) ?? 0;
+    if (leftCount > 0) {
+      hit += 1;
+      counts.set(char, leftCount - 1);
+    }
+  }
+  return {piece: hit / left.length, spoken: hit / right.length, length: left.length};
+}
+
+export function shotCopyIssues(shot) {
+  const issues = [];
+  const spoken = compactCopy(shot?.text);
+  const keep = copyCoverage(shot?.screenKeeps, shot?.text);
+  const add = copyCoverage(shot?.pictureAdds, shot?.text);
+  const full = (cover) => spoken.length > 0 && cover.length >= spoken.length * 0.85 && cover.piece >= 0.85 && cover.spoken >= 0.85;
+  if (full(keep) && full(add)) issues.push({code: 'sentence-twice', message: '同一句话在这一镜里出现了两次。'});
+  else if (full(keep)) issues.push({code: 'screen-repeats-speech', message: '屏幕上要留下的字和这句口播几乎一样，画面会变成复述。'});
+  const fragment = (cover) => cover.length >= 4 && cover.piece >= 0.8 && cover.spoken < 0.92;
+  if (!full(keep) && !full(add) && fragment(keep) && fragment(add)) {
+    const bag = new Map();
+    for (const char of compactCopy(shot.screenKeeps) + compactCopy(shot.pictureAdds)) bag.set(char, (bag.get(char) ?? 0) + 1);
+    let covered = 0;
+    const seen = new Map();
+    for (const char of spoken) {
+      const have = (bag.get(char) ?? 0) - (seen.get(char) ?? 0);
+      if (have > 0) {
+        covered += 1;
+        seen.set(char, (seen.get(char) ?? 0) + 1);
+      }
+    }
+    if (covered / spoken.length >= 0.8) issues.push({code: 'sentence-split', message: '同一句话被拆成两截，同时出现在这一镜里。'});
+  }
+  return issues;
+}
+
+export function storyboardCopyIssues(doc) {
+  return (doc?.shots ?? []).flatMap((shot, index) => shotCopyIssues(shot).map((issue) => ({...issue, shotId: shot.id, index})));
 }
 
 export function missingAssetShots(doc) {
@@ -263,12 +364,23 @@ export function updateShot(doc, id, patch = {}) {
     next.assetId = patch.assetId;
     next.match = null;
   }
+  for (const key of ['voiceSaid', 'pictureAdds', 'screenKeeps']) {
+    if (patch[key] === undefined) continue;
+    if (typeof patch[key] !== 'string') return fail('分镜说明必须是字符串');
+    next[key] = patch[key];
+  }
+  const timingDirty = patch.text !== undefined || patch.emphasis !== undefined || patch.motions !== undefined;
+  if (timingDirty) {
+    next.timeRange = null;
+    next.cues = [];
+    next.typing = null;
+  }
   const shots = doc.shots.map((shot, shotIndex) => (shotIndex === index ? syncRanges(doc, next) : shot));
-  return {ok: true, storyboard: {...doc, shots}};
+  return {ok: true, storyboard: {...doc, align: timingDirty ? null : doc.align, shots}};
 }
 
 export function addShot(doc, afterId) {
-  const shot = {id: nextId(doc.shots), text: '', role: '方案', emphasis: [], assetId: null, match: null, motions: [], note: '', charRange: null, wordRange: null, timeRange: null};
+  const shot = freshCopy({id: nextId(doc.shots), text: '', role: '方案', emphasis: [], assetId: null, match: null, motions: [], note: '', charRange: null, wordRange: null});
   const index = afterId ? doc.shots.findIndex((item) => item.id === afterId) : -1;
   if (afterId && index < 0) return fail('找不到插入位置');
   const shots = doc.shots.slice();
@@ -300,7 +412,7 @@ export function splitShot(doc, id, at) {
   const rightText = shot.text.slice(at).trim();
   if (!leftText || !rightText) return fail('拆开后两边都要有字');
   const ranges = rangesForSplit(doc, shot, leftText, rightText);
-  const right = {
+  const right = freshCopy({
     id: nextId(doc.shots),
     text: rightText,
     role: shot.role,
@@ -311,18 +423,17 @@ export function splitShot(doc, id, at) {
     note: '',
     charRange: ranges.right,
     wordRange: null,
-    timeRange: null,
-  };
-  const left = syncRanges(doc, {
+  });
+  const left = syncRanges(doc, freshCopy({
     ...shot,
     text: leftText,
     emphasis: shot.emphasis.filter((item) => leftText.includes(item.text)),
     charRange: ranges.left,
-  });
+  }));
   const syncedRight = syncRanges(doc, right);
   const shots = doc.shots.slice();
   shots.splice(index, 1, left, syncedRight);
-  return {ok: true, storyboard: {...doc, shots}};
+  return {ok: true, storyboard: {...doc, align: null, shots}};
 }
 
 export function mergeShots(doc, id) {
@@ -340,7 +451,7 @@ export function mergeShots(doc, id) {
   const motions = [...left.motions];
   for (const motion of next.motions) if (!motions.includes(motion)) motions.push(motion);
   const contiguous = left.charRange && next.charRange && left.charRange.end === next.charRange.start;
-  const merged = syncRanges(doc, {
+  const merged = syncRanges(doc, freshCopy({
     ...left,
     text,
     emphasis,
@@ -349,9 +460,8 @@ export function mergeShots(doc, id) {
     match: left.assetId ? left.match : next.match,
     note: [left.note, next.note].filter(Boolean).join('\n'),
     charRange: contiguous ? {start: left.charRange.start, end: next.charRange.end} : null,
-    timeRange: null,
-  });
+  }));
   const shots = doc.shots.slice();
   shots.splice(index, 2, merged);
-  return {ok: true, storyboard: {...doc, shots}};
+  return {ok: true, storyboard: {...doc, align: null, shots}};
 }

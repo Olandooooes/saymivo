@@ -1,6 +1,6 @@
 # Saymivo 交接文档（给接手的 AI agent）
 
-> 更新：2026-11-10（Asia/Shanghai）。仓库：https://github.com/Olandooooes/saymivo
+> 更新：2026-11-16（Asia/Shanghai）。仓库：https://github.com/Olandooooes/saymivo
 > 用户：冰纪（GitHub `Olandooooes`），中文沟通。拿到本仓库地址的 agent 请先读完本文件，再从「下一步」继续。
 
 ## 1. 目标
@@ -21,8 +21,8 @@
 | 期 | 内容 | 状态 |
 |---|---|---|
 | 第一期 | 分镜表 + 素材库页面。转写或贴稿之后按句子拆镜头：原文、段落类型（开场/痛点/方案/结尾）、重点词（标红/荧光笔）、配图（素材库 id，空即缺素材）、动效（可多选）、备注。用本地关键词规则自动匹配，不调用付费 API。分镜写入项目旁的 `<id>.storyboard.json`，并预留字范围 `charRange`、词范围 `wordRange`、时间范围 `timeRange`（草稿里时间仍是 null）。素材从可配置的本机目录读取（默认 `~/saymivo-assets` 内的 `library.json`），不进仓库。 | **已实现，见 [PR #5](https://github.com/Olandooooes/saymivo/pull/5)，待合并进 local-wip** |
-| 第二期 | 动效时间线，按字时间自动对齐。用已留下的字/词范围，填上 `timeRange`。本期不做。 | 未开始 |
-| 第三期 | 在工作台里生成插画和界面素材。本期不做。 | 未开始 |
+| 第二期 | 按精剪保留段把字时间填进 `timeRange`，并给大字回弹、标红、荧光笔、印章、打字界面、章节转场算触发时间。分镜增加「声音已经说了什么 / 画面要补充什么 / 屏幕上要留下什么」和复述检查。画布、颜色、人物小窗、缓动、响度和音效槽都在 `src/whiteboard-style.json`。 | **已实现，见分支 `cursor/whiteboard-align-a23b`（叠在第一期上），待合并** |
+| 第三期 | 在工作台里根据分镜要补充的画面生成插画和界面素材，写回素材库。 | 未开始 |
 
 第一期不替换已有转写、精剪、画面分镜（`presentation.scenes`）和导出。新的「分镜表」是稿子层面的镜头计划，和剪辑器里已有的画面分镜并存。
 
@@ -34,6 +34,7 @@
 | `local-wip-20261103` | 用户 Mac 本地工作区全部文件（380144f）+ 已合并的 P0（合并提交 `09c6861`） | **当前主线** |
 | `cursor/p1-plan-components-7f55` | P1，[PR #3](https://github.com/Olandooooes/saymivo/pull/3)，base = local-wip，最新 `2437829` | 开放，**未合并、最新提交未经原片验收** |
 | `cursor/storyboard-library-a23b` | 白板第一期：分镜表 + 素材库。[PR #5](https://github.com/Olandooooes/saymivo/pull/5)，base = local-wip | 开放，待合并。不包含 P1 的 `validatePlan` |
+| `cursor/whiteboard-align-a23b` | 白板第二期：按字对齐、分镜三列、风格和声音规范。[PR #6](https://github.com/Olandooooes/saymivo/pull/6)，base = 第一期分支 | 开放，待合并 |
 | `cursor/sync-local-koubo-667c` | PR #1，另一个 agent 的同步，与 local-wip 分叉 | 不要动 |
 
 用户 Mac 上的本地仓库：`/Users/lht/Borumi Projects/koubo-studio`，当前检出 `local-wip-20261103`。Mac 没有命令行 git 凭据，推送需通过云端 agent 或其它有 GitHub 权限的环境。用户已授权直接推送本项目到 GitHub。
@@ -57,7 +58,7 @@
 
 ## 4. 下一步（按顺序）
 
-**当前优先：** 白板第一期已经做在 [PR #5](https://github.com/Olandooooes/saymivo/pull/5)（`cursor/storyboard-library-a23b`，见 1.1），等合并进 `local-wip-20261103`。不要从 `main` 开工。
+**当前优先：** 白板第二期 [PR #6](https://github.com/Olandooooes/saymivo/pull/6)（`cursor/whiteboard-align-a23b`），叠在第一期 [PR #5](https://github.com/Olandooooes/saymivo/pull/5) 上，等合并。不要从 `main` 开工。
 
 Mac 上接现有素材目录：
 
@@ -68,7 +69,11 @@ Mac 上接现有素材目录：
 
 素材页在首页侧栏「白板素材」。分镜表在项目里，转写完成或贴上稿子之后点「分镜表」：按稿子生成，或从当前转写生成。配图留空的镜头会汇总成「缺素材」。
 
-**产品上的下一步是第二期：** 动效时间线按字时间对齐。分镜已经留下 `charRange` 和 `wordRange`，`timeRange` 仍是 null。第二期用转写词的起止时间填上，再驱动大字回弹、标红、荧光笔、印章、打字界面、章节转场。仍不调用付费 API。第三期（在工作台里生成插画和界面）还没开始。
+Mac 上放音效：在素材目录下建 `sfx/`（默认 `~/saymivo-assets/sfx`，素材目录本身的接法见上面 2–4）。文件名按 `src/whiteboard-style.json` 的 `audio.sfx.slots`：`bounce.wav`、`mark.wav`、`highlight.wav`、`stamp.wav`、`type.wav`、`chapter.wav`。缺文件时分镜和时间线还在，只是那个槽位没有声音。子目录名是规范里的 `audio.sfx.dir`。
+
+分镜表里可以「按精剪后的字时间对齐」，也可以打开「风格规范」查看当前取值。说明见 [`docs/DESIGN-whiteboard.md`](docs/DESIGN-whiteboard.md)。
+
+**产品上的下一步是第三期：** 在工作台里根据「画面要补充什么」生成插画和界面素材，写回本机素材库。仍不调用付费 API。第二期没有做生成。
 
 下面 1–7 仍是此前 P1 收尾，没有取消。本分支没有 `validatePlan`（它在未合并的 PR #3）。
 

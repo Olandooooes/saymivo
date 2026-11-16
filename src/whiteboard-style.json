@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "name": "whiteboard",
+  "canvas": {
+    "aspect": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "background": "#F7F2EA",
+    "grid": {
+      "kind": "dot",
+      "spacing": 28,
+      "dotRadius": 1.7,
+      "color": "#2b2f36",
+      "opacity": 0.22
+    }
+  },
+  "color": {
+    "ink": "#2b2f36",
+    "support": "#7d93b5",
+    "emphasis": "#e0473a",
+    "highlighter": "#f7e36b"
+  },
+  "type": {
+    "fontFamily": "\"PingFang SC\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", \"WenQuanYi Micro Hei\", sans-serif",
+    "lineHeight": 1.25,
+    "maxLineWidth": 1280,
+    "roles": {
+      "display": {"size": 120, "weight": 700},
+      "title": {"size": 64, "weight": 650},
+      "body": {"size": 36, "weight": 500},
+      "note": {"size": 22, "weight": 400}
+    }
+  },
+  "layout": {
+    "copy": {"x": 120, "y": 200, "width": 980},
+    "illustration": {"x": 1120, "y": 170, "width": 680, "height": 520}
+  },
+  "pip": {
+    "anchor": "bottom-left",
+    "x": 56,
+    "bottom": 56,
+    "diameter": 220,
+    "stroke": {"color": "#2b2f36", "width": 8},
+    "shadow": {"color": "#2b2f36", "opacity": 0.2, "blur": 18, "dy": 8},
+    "matte": false,
+    "keepVideoBackground": true
+  },
+  "motion": {
+    "大字回弹": {"durationMs": 420, "easing": {"type": "spring", "stiffness": 280, "damping": 14}},
+    "画布滑动": {"durationMs": 700, "easing": {"type": "bezier", "values": [0.22, 1, 0.36, 1]}},
+    "画布推近": {"durationMs": 800, "easing": {"type": "bezier", "values": [0.16, 1, 0.3, 1]}},
+    "印章落下": {"durationMs": 360, "easing": {"type": "spring", "stiffness": 420, "damping": 16}},
+    "荧光笔划过": {"durationMs": 280, "easing": {"type": "bezier", "values": [0.4, 0, 0.2, 1]}},
+    "章节转场": {"durationMs": 500, "easing": {"type": "bezier", "values": [0.2, 0.8, 0.2, 1]}},
+    "标红": {"durationMs": 160, "easing": {"type": "bezier", "values": [0.2, 0, 0, 1]}},
+    "打字界面": {"durationMs": 0, "followSpeech": true, "easing": {"type": "bezier", "values": [0, 0, 1, 1]}}
+  },
+  "stamp": {"label": "印", "minScale": 0.84, "maxScale": 1.08, "minDegrees": -14, "maxDegrees": -6},
+  "sticker": {"minScale": 0.9, "maxScale": 1.05, "minDegrees": -8, "maxDegrees": 8},
+  "highlighter": {"heightRatio": 0.42, "minDegrees": -3, "maxDegrees": 2},
+  "align": {
+    "leadMs": -40,
+    "leadMinMs": -80,
+    "leadMaxMs": 0,
+    "onsetMotions": ["标红", "荧光笔"]
+  },
+  "audio": {
+    "voice": {"integratedLufs": -16, "truePeakDbtp": -1.5, "lra": 11},
+    "music": {"enabled": false, "gainDb": -18, "duckDb": -12, "duckAttackMs": 80, "duckReleaseMs": 400},
+    "sfx": {
+      "dir": "sfx",
+      "gainDbMax": -8,
+      "slots": {
+        "大字回弹": "bounce.wav",
+        "标红": "mark.wav",
+        "荧光笔": "highlight.wav",
+        "印章": "stamp.wav",
+        "打字界面": "type.wav",
+        "章节转场": "chapter.wav"
+      }
+    }
+  }
+}

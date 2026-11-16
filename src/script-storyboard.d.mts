@@ -6,6 +6,7 @@ export type ShotRole = '开场' | '痛点' | '方案' | '结尾';
 export type MotionKind = '大字回弹' | '标红' | '荧光笔' | '印章' | '打字界面' | '章节转场';
 export type EmphasisStyle = '标红' | '荧光笔';
 export type ScriptEmphasis = {text: string; style: EmphasisStyle};
+export type ScriptCue = {motion: MotionKind; atMs: number; leadMs: number; word: string | null; wordIndex: number | null};
 export type ScriptShot = {
   id: string;
   text: string;
@@ -18,15 +19,21 @@ export type ScriptShot = {
   charRange: {start: number; end: number} | null;
   wordRange: {start: number; end: number} | null;
   timeRange: {startMs: number; endMs: number} | null;
+  voiceSaid: string;
+  pictureAdds: string;
+  screenKeeps: string;
+  cues: ScriptCue[];
+  typing: Array<{text: string; atMs: number; wordIndex?: number}> | null;
 };
 export type ScriptWord = {text: string; startMs: number | null; endMs: number | null};
 export type ScriptStoryboard = {
-  version: 1;
+  version: 1 | 2;
   kind: 'script-storyboard';
   source: 'script' | 'transcript';
   sourceText: string;
   words: ScriptWord[];
   shots: ScriptShot[];
+  align?: {leadMs: number; keepsKey: string; clock: 'source' | 'timeline'} | null;
   updatedAt?: string;
 };
 export type StoryboardEdit = {ok: true; storyboard: ScriptStoryboard} | {ok: false; error: string};
@@ -43,7 +50,11 @@ export function captionsToDraftInput(captions: CaptionLike[] | undefined): {sour
 export function validateScriptStoryboard(doc: unknown): {ok: boolean; issues: string[]};
 export function missingAssetShots(doc: ScriptStoryboard): Array<{shot: ScriptShot; index: number}>;
 export function rematchAssets(doc: ScriptStoryboard, assets: Array<{id: string; deprecated?: boolean; keywords?: string[]; title?: string; usages?: string[]; type?: string}>, options?: {onlyMissing?: boolean}): ScriptStoryboard;
-export function updateShot(doc: ScriptStoryboard, id: string, patch: Partial<Pick<ScriptShot, 'text' | 'role' | 'emphasis' | 'motions' | 'note' | 'assetId'>>): StoryboardEdit;
+export function defaultShotCopy(shot?: Partial<ScriptShot>): {voiceSaid: string; pictureAdds: string; screenKeeps: string};
+export function upgradeScriptStoryboard(doc: unknown): ScriptStoryboard;
+export function shotCopyIssues(shot: Partial<ScriptShot>): Array<{code: string; message: string}>;
+export function storyboardCopyIssues(doc: ScriptStoryboard): Array<{code: string; message: string; shotId: string; index: number}>;
+export function updateShot(doc: ScriptStoryboard, id: string, patch: Partial<Pick<ScriptShot, 'text' | 'role' | 'emphasis' | 'motions' | 'note' | 'assetId' | 'voiceSaid' | 'pictureAdds' | 'screenKeeps'>>): StoryboardEdit;
 export function addShot(doc: ScriptStoryboard, afterId?: string | null): StoryboardEdit;
 export function removeShot(doc: ScriptStoryboard, id: string): StoryboardEdit;
 export function splitShot(doc: ScriptStoryboard, id: string, at: number): StoryboardEdit;

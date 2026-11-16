@@ -83,6 +83,23 @@ test('storyboard draft, save, reload and delete stay beside the project', async 
     assert.equal(gone.res.body.storyboard, null);
     assert.equal(isProjectDocument('demo.json'), true);
     assert.equal(isProjectDocument('demo.storyboard.json'), false);
+    const style = await call(root, 'GET', '/api/whiteboard-style');
+    assert.equal(style.res.statusCode, 200);
+    assert.equal(style.res.body.style.canvas.width, 1920);
+    assert.equal(style.res.body.style.audio.music.enabled, false);
+    const legacy = {...drafted.res.body.storyboard, version: 1};
+    for (const shot of legacy.shots) {
+      delete shot.voiceSaid;
+      delete shot.pictureAdds;
+      delete shot.screenKeeps;
+      delete shot.cues;
+      delete shot.typing;
+    }
+    delete legacy.align;
+    const upgraded = await call(root, 'PUT', '/api/projects/demo/storyboard', legacy);
+    assert.equal(upgraded.res.statusCode, 200);
+    assert.equal(upgraded.res.body.storyboard.version, 2);
+    assert.equal(typeof upgraded.res.body.storyboard.shots[0].screenKeeps, 'string');
   } finally {
     if (previous === undefined) delete process.env.SAYMIVO_ASSETS_DIR;
     else process.env.SAYMIVO_ASSETS_DIR = previous;
