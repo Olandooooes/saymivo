@@ -15,7 +15,11 @@ git rev-parse HEAD
 git status -sb
 ```
 
-`status` 必须显示 `cursor/picture-making-pack-94e7`。`rev-parse` 的结果与本 PR 的 head 一致后再继续。内容提交见文末「提交指针」。指针还没填入时，以 PR head 为准，不要改用 `main`。
+`status` 必须显示 `cursor/picture-making-pack-94e7`。`rev-parse` 的结果与本 PR 的 head 一致后再继续。不要改用 `main`。制作包正文提交是 `357637edf8c968093c347d0dccb16f4a46cd069b`；本说明若在其后的提交里，用下面的命令确认正文仍是当前 head 的祖先：
+
+```bash
+git merge-base --is-ancestor 357637edf8c968093c347d0dccb16f4a46cd069b HEAD
+```
 
 ## 2. 按这个顺序读
 
@@ -62,6 +66,6 @@ python3 scripts/picture-making/render-neutral-preview.py
 
 - 分支：`cursor/picture-making-pack-94e7`
 - 基线：`local-wip-20261103` @ `b3d039b7765718b90ff073481fd2802abad71869`
-- 制作包内容提交：见本文件末次更新；若下面一行仍是占位，以 GitHub PR head 为准
-- CONTENT_COMMIT: `PENDING`
+- 制作包正文提交：`357637edf8c968093c347d0dccb16f4a46cd069b`
+- 请检出本分支的 PR head（含本指针的最新提交），不要检出 `main`
 - 本 PR 未合并。`main` 未更新。

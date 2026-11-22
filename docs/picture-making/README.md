@@ -9,6 +9,7 @@
 | 标识 | `picture-making-pack-20261122` |
 | 分支 | `cursor/picture-making-pack-94e7` |
 | 基线 | `local-wip-20261103` @ `b3d039b7765718b90ff073481fd2802abad71869` |
+| 正文提交 | `357637edf8c968093c347d0dccb16f4a46cd069b`。请用本分支最新 head，并确认该提交是祖先 |
 | 状态 | **未合并**。默认分支 `main`（`bf7c50de9102448e5e16e6dc2e32662a4371a2fc`）没有本包。合并前工作线的上述提交也没有本包 |
 
 不要从 `main` 的 HANDOFF 开工，也不要读取 PR #8 里只到第 8 节的技能。PR #8 仍 open（head `cursor/picture-making-skill-737a` @ `5f18b30fd61ef54c00a9ed894f933f68b249f5c8`）。本包没有合并它，也没有改 PR #1、#3、#4、#5、#6。
