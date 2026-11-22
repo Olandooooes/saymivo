@@ -65,6 +65,7 @@ python3 scripts/picture-making/render-neutral-preview.py
 ## 5. 提交指针
 
 - 分支：`cursor/picture-making-pack-94e7`
+- PR：[https://github.com/Olandooooes/saymivo/pull/9](https://github.com/Olandooooes/saymivo/pull/9)（未合并）
 - 基线：`local-wip-20261103` @ `b3d039b7765718b90ff073481fd2802abad71869`
 - 制作包正文提交：`357637edf8c968093c347d0dccb16f4a46cd069b`
 - 请检出本分支的 PR head（含本指针的最新提交），不要检出 `main`

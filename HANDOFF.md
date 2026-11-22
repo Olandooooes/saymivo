@@ -5,12 +5,12 @@
 
 ## 0. 口播视觉制作包（本分支上的 PR，未合并）
 
-本段只在分支 `cursor/picture-making-pack-94e7` 上为真。**`main` 没有这套文件。** 已知 `main` 是 `bf7c50de9102448e5e16e6dc2e32662a4371a2fc`，落后。**本 PR 合并前，`local-wip-20261103` 的 `b3d039b7765718b90ff073481fd2802abad71869` 也没有这套文件。** 不要把本页写成默认分支或工作线已经更新。
+本段只在分支 `cursor/picture-making-pack-94e7`、[PR #9](https://github.com/Olandooooes/saymivo/pull/9) 上为真。**`main` 没有这套文件。** 已知 `main` 是 `bf7c50de9102448e5e16e6dc2e32662a4371a2fc`，落后。**本 PR 合并前，`local-wip-20261103` 的 `b3d039b7765718b90ff073481fd2802abad71869` 也没有这套文件。** 不要把本页写成默认分支或工作线已经更新。
 
 | 项 | 事实 |
 | --- | --- |
 | 入口 | [docs/picture-making/README.md](docs/picture-making/README.md) |
-| 分支 | `cursor/picture-making-pack-94e7` |
+| 分支 | `cursor/picture-making-pack-94e7`，[PR #9](https://github.com/Olandooooes/saymivo/pull/9) |
 | 基线 | `local-wip-20261103` @ `b3d039b7765718b90ff073481fd2802abad71869` |
 | 正文提交 | `357637edf8c968093c347d0dccb16f4a46cd069b`。请检出本分支最新 head，并确认这个提交是它的祖先 |
 | 技能 | 第 1–12 节 + 开工检查。PR #8 的第 1–8 节不能覆盖 |

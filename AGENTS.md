@@ -5,7 +5,7 @@
 
 ## 口播视觉制作包（未合并）
 
-素材制作、修订、委托、动效编排或审片，先确认自己检出的是 `cursor/picture-making-pack-94e7`，再按下面的顺序读。本包在该分支的开放 PR 上，**未合并**。`main`（`bf7c50de9102448e5e16e6dc2e32662a4371a2fc`）和未合并前的 `local-wip-20261103`（`b3d039b7765718b90ff073481fd2802abad71869`）都没有这些文件。不要读取 PR #8 里只到第 8 节的技能。
+素材制作、修订、委托、动效编排或审片，先确认自己检出的是 `cursor/picture-making-pack-94e7`（[PR #9](https://github.com/Olandooooes/saymivo/pull/9)），再按下面的顺序读。本包在该 PR 上，**未合并**。`main`（`bf7c50de9102448e5e16e6dc2e32662a4371a2fc`）和未合并前的 `local-wip-20261103`（`b3d039b7765718b90ff073481fd2802abad71869`）都没有这些文件。不要读取 PR #8 里只到第 8 节的技能。
 
 1. [制作包入口](docs/picture-making/README.md)
 2. [项目配置](docs/picture-making/project-config.md)（公开可读主档落在仓库内；不要先去找不可访问的私有 box）

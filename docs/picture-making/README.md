@@ -7,7 +7,7 @@
 | 项 | 值 |
 | --- | --- |
 | 标识 | `picture-making-pack-20261122` |
-| 分支 | `cursor/picture-making-pack-94e7` |
+| 分支 | `cursor/picture-making-pack-94e7`，[PR #9](https://github.com/Olandooooes/saymivo/pull/9) |
 | 基线 | `local-wip-20261103` @ `b3d039b7765718b90ff073481fd2802abad71869` |
 | 正文提交 | `357637edf8c968093c347d0dccb16f4a46cd069b`。请用本分支最新 head，并确认该提交是祖先 |
 | 状态 | **未合并**。默认分支 `main`（`bf7c50de9102448e5e16e6dc2e32662a4371a2fc`）没有本包。合并前工作线的上述提交也没有本包 |
