@@ -1,0 +1,16 @@
+[Script Info]
+Title: Caption style fixture (neutral example, not a real transcript)
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,Noto Sans SC,64,&H00FFFFFF,&H0060DAF4,&H30464646,&H30464646,-1,0,0,0,100,100,0,0,3,10,0,2,480,80,36,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.40,0:00:01.80,Caption,,0,0,0,,{\an2\pos(1180,1038)}这是一条示例字幕，
+Dialogue: 0,0:00:01.80,0:00:03.20,Caption,,0,0,0,,{\an2\pos(1180,1038)}黄字只标{\1c&H0060DAF4&}示例名词{\1c&H00FFFFFF&}。

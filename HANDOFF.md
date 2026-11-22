@@ -1,7 +1,23 @@
 # Saymivo 交接文档（给接手的 AI agent）
 
-> 更新：2026-11-03 17:00（Asia/Shanghai）。仓库：https://github.com/Olandooooes/saymivo
+> 更新：2026-11-22。上一则工作线说明写于 2026-11-03 17:00（Asia/Shanghai）。仓库：https://github.com/Olandooooes/saymivo
 > 用户：冰纪（GitHub `Olandooooes`），中文沟通。拿到本仓库地址的 agent 请先读完本文件，再从「下一步」继续。
+
+## 0. 口播视觉制作包（本分支上的 PR，未合并）
+
+本段只在分支 `cursor/picture-making-pack-94e7` 上为真。**`main` 没有这套文件。** 已知 `main` 是 `bf7c50de9102448e5e16e6dc2e32662a4371a2fc`，落后。**本 PR 合并前，`local-wip-20261103` 的 `b3d039b7765718b90ff073481fd2802abad71869` 也没有这套文件。** 不要把本页写成默认分支或工作线已经更新。
+
+| 项 | 事实 |
+| --- | --- |
+| 入口 | [docs/picture-making/README.md](docs/picture-making/README.md) |
+| 分支 | `cursor/picture-making-pack-94e7` |
+| 基线 | `local-wip-20261103` @ `b3d039b7765718b90ff073481fd2802abad71869` |
+| 技能 | 第 1–12 节 + 开工检查。PR #8 的第 1–8 节不能覆盖 |
+| PR #8 | 仍 open，head `cursor/picture-making-skill-737a` @ `5f18b30fd61ef54c00a9ed894f933f68b249f5c8`。本包只放入它的待填拆解模板和动画验收要求，不合并该 PR |
+| 其他产品 PR | #1、#3、#4、#5、#6 未改，未合并 |
+| 合并 | 不自动合并，不改默认分支 |
+
+开工先读制作包入口和 [项目配置](docs/picture-making/project-config.md)，再读两份技能全文。私有错题本全文不在仓库。实测步骤见 [CODEX-实测接续.md](docs/picture-making/CODEX-实测接续.md)。下面第 1–6 节仍是工作台产品线交接，制作包没有代替那些原片验收。
 
 ## 1. 目标
 
@@ -15,7 +31,8 @@
 | 分支 | 内容 | 状态 |
 |---|---|---|
 | `main` | 旧版本 | 落后，**不要从 main 开工** |
-| `local-wip-20261103` | 用户 Mac 本地工作区全部文件（380144f）+ 已合并的 P0（合并提交 `09c6861`） | **当前主线** |
+| `local-wip-20261103` | 用户 Mac 本地工作区全部文件（380144f）+ 已合并的 P0（合并提交 `09c6861`） | **当前产品主线**。本制作包 PR 合并前，这一提交没有技能第 1–12 节 |
+| `cursor/picture-making-pack-94e7` | 口播视觉制作包。入口 [docs/picture-making/README.md](docs/picture-making/README.md) | 开放 PR，**未合并**，不是默认分支 |
 | `cursor/p1-plan-components-7f55` | P1，[PR #3](https://github.com/Olandooooes/saymivo/pull/3)，base = local-wip，最新 `2437829` | 开放，**未合并、最新提交未经原片验收** |
 | `cursor/sync-local-koubo-667c` | PR #1，另一个 agent 的同步，与 local-wip 分叉 | 不要动 |
 
@@ -68,5 +85,6 @@
 
 - 每轮改动：合成回归测试 + `npm run check` 全绿 + **在真实素材上验收**（只有单测通过不算完成，过去多次是原片验收抓出的问题）。
 - 不提交私人媒体、转写、密钥、模型文件。
+- 口播素材、修订、委托、动效编排或审片：先读 [制作包入口](docs/picture-making/README.md)。该入口只在本 PR 分支上；未合并，`main` 里没有。参考拆解第 1–9 节仍待填。私有错题本全文不在仓库，按项目配置里的公开快照开工，不要编造主档句子。
 - 不写针对某一份讲稿的规则或文案；LLM 只能填 schema，输出必须过 `validatePlan`，大字/条目文字必须来自保留下来的原话。
 - 用户偏好：中文沟通；默认人物不全屏；不用付费 API；目标是省剪辑时间而不是一次性成片。

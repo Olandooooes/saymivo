@@ -11,6 +11,7 @@ Saymivo 基于 [AutoBroll](https://github.com/andriidrok1/autobroll)，原作者
 | SmileySans-Oblique.ttf | [Smiley Sans / 得意黑](https://github.com/atelier-anchor/smiley-sans) | [SIL OFL 1.1](public/fonts/smiley-sans-OFL.txt) |
 | douyin-sans-bold.ttf | [抖音美好体](https://www.douyin.com/) / Beijing Zitiao Network Technology | [随附 OFL](public/fonts/douyin-sans-OFL.txt) |
 | zcool-qingke-huangyou.ttf | [ZCOOL QingKe HuangYou](https://github.com/googlefonts/zcool-qingke-huangyou) | [SIL OFL 1.1](public/fonts/zcool-qingke-huangyou-OFL.txt) |
+| docs/picture-making/style/fonts/NotoSansSC-Bold.otf | [Noto Sans SC](https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004)（未改的 Bold，© 2014-2021 Adobe） | [SIL OFL 1.1](docs/picture-making/style/fonts/OFL.txt) |
 
 依赖的准确版本见 package-lock.json / requirements-local.txt；各依赖保留自己的许可。特别是 [Remotion](https://www.remotion.dev/docs/license) 有单独适用条件，使用前按自身情况核对。FFmpeg 的许可取决于实际安装的构建；Python 工具和系统二进制不随源码分发。
 

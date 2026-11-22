@@ -1,0 +1,20 @@
+# 技能来源与哈希（原文未改写、未删规则）
+
+复制自本机当时技能库，仅作仓库同步附件，不声称已写入 GitHub。
+
+- saymivo-picture-making/SKILL.md
+  来源：agent 技能库 saymivo-picture-making
+  字节：25876
+  SHA256：45c7b76852338330957b94bfd83d7020b911239988b9ef98cc9170c726e110fe
+  含第1–12节（第12节为执行与验收约束）。仓库 PR #8 分支旧稿约 8797 字节、只到第8节，不能覆盖本文件。
+
+- skill-1795151255813/SKILL.md
+  来源：agent 技能库 skill-1795151255813（口播制作错题本开工检查）
+  字节：2676
+  SHA256：f6d48240ea2eb79c70108d3e8f7df6d8316da520e18ad99af2ce4d0e990c27a4
+  仓库默认分支与 PR #8 均未见此技能。
+
+建议仓库路径：
+- .cursor/skills/saymivo-picture-making/SKILL.md
+- .cursor/skills/skill-1795151255813/SKILL.md
+  （或项目约定的 skills 目录；由云代理按仓库规范落位，不在此指定必须改默认分支。）
