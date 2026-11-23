@@ -6,6 +6,10 @@
 
 [English](README.en.md) · [安装与排错](docs/setup.md) · [实际演示](docs/demo.md) · [开发原理](docs/architecture.md) · [参与贡献](CONTRIBUTING.md)
 
+## 口播视觉制作包（本 PR，未合并）
+
+给后续制作 agent 的规范、项目配置和中性夹具在 [制作包入口](docs/picture-making/README.md)。它在分支 `cursor/picture-making-pack-94e7` 上，**未合并**。默认分支 `main` 仍是旧工作线，没有这套文件；未合并前的 `local-wip-20261103` 也没有。不要从 `main` 查找技能第 1–12 节。本段不改变上面的工作台用法。
+
 ## 它能帮我做什么？
 
 <p align="center">

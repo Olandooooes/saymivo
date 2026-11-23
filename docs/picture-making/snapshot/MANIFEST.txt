@@ -1,0 +1,32 @@
+# MANIFEST 云附件内文件（相对 cloud-attachment/）
+
+文件数：25
+未打包合计：169044 字节（165.1 KiB）
+
+| 路径 | 字节 | SHA256 |
+| --- | ---: | --- |
+| 01-skills/saymivo-picture-making/SKILL.md | 25876 | `45c7b76852338330957b94bfd83d7020b911239988b9ef98cc9170c726e110fe` |
+| 01-skills/skill-1795151255813/SKILL.md | 2676 | `f6d48240ea2eb79c70108d3e8f7df6d8316da520e18ad99af2ce4d0e990c27a4` |
+| 01-skills/来源与哈希.txt | 969 | `cfc489177c96a7a7e709232968becb498fc6fdbde5c2e8aac8e301dbeee1b76d` |
+| 02-规则公开版/制作执行清单-公开版.md | 41879 | `54497bf85a27579a3be9f9229509f6df39e17a0a693d8bcd86e029386e2a9b04` |
+| 02-规则公开版/效力与来源映射.md | 2416 | `cbe8786a3b0ff4fef074803ebf5969ab9de45082c48b76602427b8df93981f81` |
+| 02-规则公开版/阅读入口-公开版.md | 902 | `8fe74a9e2f97e7e634e347e3c8f8f9f03e0794519b9bcaa40061a445701e65a1` |
+| 03-参考与验收/可公开事实与方法.md | 2566 | `d422c904ededb11333bed59d04a17b0893282d804f634b147d1372fb1fce305e` |
+| 03-参考与验收/待填与缺项索引.md | 344 | `dad14a97454c4ad1c300ceeba83a14e751ab09db9f2bdfb5c06287e7bed4e400` |
+| 04-可复用素材/缺项与权利索引.md | 1631 | `7ed7098f32c8a2a142d66fe41801949e87832958db32845116000d4e90f8432b` |
+| 05-风格配置/camera-and-caption.example.json | 1124 | `79c5463ab131f48f2280ecba48f59a22ae0bb02c1030b8f6f594d3bee5ff0d03` |
+| 05-风格配置/caption-style.example.ass | 862 | `6a6b43f2bb8fc405206e14db011e6614e4c560053d1c82e68ec82f99efd7393d` |
+| 05-风格配置/fonts/FONT-LICENSE-AND-SOURCE.md | 829 | `cdadddfde0c17b256a39c9a2e7ec82ddea2b58eef29d64f501b9b122c22f9c74` |
+| 05-风格配置/渲染方法与依赖-路径可迁移.md | 1185 | `e03e80857615df0cb408b05ee63fbcc97c2bdd65b0a0d026ce1c363ec301005a` |
+| 06-技术源与fixture/README.md | 778 | `d3c7d15fa1c83239df6cdb12a159ffdf64ab9910e6b89dfa9bf4dc946fe5d38d` |
+| 06-技术源与fixture/build_preview.py | 785 | `44ae31c2ca08f96fca84bc0deed0bc2cfab017f0fd743707ad2da71aad29c938` |
+| 06-技术源与fixture/fixtures/00-bg.png | 10623 | `0496d3464d986a455b04f980ba3c3ccd5edfc939c94ab7c0b4d5258caf5709bb` |
+| 06-技术源与fixture/fixtures/01-nav-示例主题.png | 11542 | `27f5548931f72bd3d86dd93f5be84559e0170512fe3afaa8a26bf36771c6d391` |
+| 06-技术源与fixture/fixtures/02-explain-示例重点.png | 14980 | `edeb8b9162547494f19f6fff9916783bdfde2ac77937ed073883612fbaa7f5bc` |
+| 06-技术源与fixture/fixtures/03-illus-windows.png | 10327 | `1dc0d38ae6ebd22a1c43bccfc56b75fa73efc7e6591995a3f9163d4b26fc6dcc` |
+| 06-技术源与fixture/fixtures/preview-key-state.png | 25502 | `b87ac399cb13f1ecd20b75a3f2eeec0334d2dbf975915a04723fd30ce1051b9d` |
+| 06-技术源与fixture/picture_compositor.py | 2299 | `56ff713196802c0934a62c06919e8706111813b39ea78493cd55a26caf98dd4f` |
+| 07-云任务与清单/MANIFEST.txt | 3271 | `3ab6288f66f0a22460aaacd0ace164dae0f18c641e3473a1c34b6f3bca13c97c` |
+| 07-云任务与清单/云任务说明.md | 2943 | `09efa5d39bb6ab74d2c27e9f94fa04a385940753a630317b2d214fd98596f8c8` |
+| 07-云任务与清单/仓库更新后给Codex的测试指令.md | 1549 | `f5af18c02a75ee99433dff72b788a103d6be2dea42b06101dd5bf7ee134221d6` |
+| 07-云任务与清单/原件与脱敏映射.md | 1186 | `5753e6791500ee435e317d4c9671f6d30a31163f470f3b1a0ba0e89cae325c31` |

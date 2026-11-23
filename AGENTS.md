@@ -1,7 +1,22 @@
 # AGENTS.md
 
 接手本仓库的 AI agent：请先阅读 [HANDOFF.md](HANDOFF.md)（当前进度、分支现状、下一步计划、工作约定）。
-当前主线分支是 `local-wip-20261103`，不是 `main`。
+当前产品主线分支是 `local-wip-20261103`，不是 `main`。`main` 落后。
+
+## 口播视觉制作包（未合并）
+
+素材制作、修订、委托、动效编排或审片，先确认自己检出的是 `cursor/picture-making-pack-94e7`（[PR #9](https://github.com/Olandooooes/saymivo/pull/9)），再按下面的顺序读。本包在该 PR 上，**未合并**。`main`（`bf7c50de9102448e5e16e6dc2e32662a4371a2fc`）和未合并前的 `local-wip-20261103`（`b3d039b7765718b90ff073481fd2802abad71869`）都没有这些文件。不要读取 PR #8 里只到第 8 节的技能。
+
+1. [制作包入口](docs/picture-making/README.md)
+2. [项目配置](docs/picture-making/project-config.md)（公开可读主档落在仓库内；不要先去找不可访问的私有 box）
+3. [技能第 1–12 节](.cursor/skills/saymivo-picture-making/SKILL.md)，并执行第 12 节。目录说明：[.cursor/skills/README.md](.cursor/skills/README.md)
+4. [开工检查](.cursor/skills/skill-1795151255813/SKILL.md)
+5. [公开执行清单](docs/picture-making/rules/制作执行清单-公开版.md) 与 [效力映射](docs/picture-making/rules/效力与来源映射.md)
+6. [风格配置](docs/picture-making/style/camera-and-caption.example.json)（字幕和圆窗参数在这里，不在技能正文里）
+7. [参考拆解模板](docs/picture-making/参考视频拆解模板.md)（第 1–9 节待填）与 [动画验收要求](docs/picture-making/动画验收要求.md)
+8. [素材缺项](docs/picture-making/assets/缺项与权利索引.md)
+
+剪辑工作台的顺序仍走下面的口播剪辑复用流程。本段不改工作台功能，也不合并其他产品 PR。
 # 项目工作指引
 
 ## 成果、预算与止损

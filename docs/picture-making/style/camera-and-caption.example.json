@@ -1,0 +1,49 @@
+{
+  "documentation_only": true,
+  "scope": "某一项目已确认的圆窗与字幕条几何示例，写入项目配置而非通用 skill；不是跨项目默认像素标准。源文件路径、人物身份与原片文件名已省略。",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "circle_pip": {
+    "center_x": 224.5,
+    "center_y": 854.5,
+    "outer_diameter": 377,
+    "ring_width": 14
+  },
+  "source_frame_example": {
+    "source_width": 1280,
+    "source_height": 720,
+    "crop_xyxy": [
+      300,
+      0,
+      1020,
+      720
+    ],
+    "note": "仅描述裁切几何；不附原帧。"
+  },
+  "caption_safe_band": {
+    "playres": [
+      1920,
+      1080
+    ],
+    "alignment": "an2",
+    "pos": [
+      1180,
+      1038
+    ],
+    "measured_bar_top": 964,
+    "measured_bar_bottom": 1048,
+    "measured_bar_height": 84,
+    "font": "Noto Sans SC",
+    "fontsize": 64,
+    "bold": true,
+    "primary_white": "#FFFFFF",
+    "highlight_yellow": "#F4DA60",
+    "ass_highlight": "&H0060DAF4&",
+    "border_style": 3,
+    "outline": 10,
+    "outline_colour_ass": "&H30464646&"
+  }
+}
