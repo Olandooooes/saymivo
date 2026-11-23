@@ -2,6 +2,8 @@
 
 给后续 agent 的开工入口。本页只导航，不另写一套规则。
 
+当前 skill 版本：`2026.11.23.1`。从[技能执行导航](../../.cursor/skills/saymivo-picture-making/SKILL.md#执行导航)承接SOP；涉及封面、平台草稿或归档时读取技能内的[交付参考](../../.cursor/skills/saymivo-picture-making/references/delivery-and-archive.md)。变更与回退依据见[版本记录](verification/2026-11-23-skill-update.md)。
+
 ## 这份检出是哪一版
 
 | 项 | 值 |

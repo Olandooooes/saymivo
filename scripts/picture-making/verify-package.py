@@ -17,8 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 PACK = ROOT / "docs" / "picture-making"
 
 EXPECTED = {
+    '.cursor/skills/saymivo-picture-making/references/delivery-and-archive.md': '235b79241febc74e3841f6cb417098e9ff47040aa98e9b749ba0c4f6ce734ec7',
+    '.cursor/skills/saymivo-picture-making/scripts/check_style.py': 'dc54138138ca779afba06e1d762007aeb330def9b71da64ade08a139f82f467c',
     ".cursor/skills/saymivo-picture-making/SKILL.md":
-        "45c7b76852338330957b94bfd83d7020b911239988b9ef98cc9170c726e110fe",
+        "16627d270e81bd1aa46be301213443468e68d1c8d8eb101d8eb9583495439ed5",
     ".cursor/skills/skill-1795151255813/SKILL.md":
         "f6d48240ea2eb79c70108d3e8f7df6d8316da520e18ad99af2ce4d0e990c27a4",
     "docs/picture-making/rules/制作执行清单-公开版.md":
